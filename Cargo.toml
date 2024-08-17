@@ -1,0 +1,38 @@
+[package]
+license      = "MIT OR Apache-2.0"
+name         = "ratatui-wgpu"
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.75.0"
+
+[features]
+web = [ "wgpu/webgl" ]
+
+[[example]]
+name = "hello_web"
+path = "examples/web/hello_web.rs"
+
+[dependencies]
+bytemuck       = { version = "1.17.0", features = [ "derive" ] }
+coolor         = "1.0.0"
+guillotiere    = "0.6.2"
+log            = { version = "0.4.22", default-features = false }
+palette        = { version = "0.7.6", default-features = false, features = [ "std", "named" ] }
+priority-queue = "2.1.0"
+ratatui        = { version = "0.28.0", default-features = false }
+swash          = "0.1.18"
+thiserror      = "1.0.63"
+unicode-width  = "0.1.13"
+wgpu           = "22.1.0"
+
+[dev-dependencies]
+anyhow                   = "1.0.86"
+chrono                   = "0.4.38"
+console_error_panic_hook = "0.1.7"
+console_log              = "1.0.0"
+env_logger               = "0.11.5"
+futures-lite             = "2.3.0"
+wasm-bindgen             = "0.2"
+wasm-bindgen-futures     = "0.4.42"
+web-sys                  = "0.3.70"
+winit                    = "0.30.5"

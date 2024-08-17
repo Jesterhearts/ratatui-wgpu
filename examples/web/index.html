@@ -1,0 +1,20 @@
+<html>
+  <head>
+    <meta
+      name="viewport"
+      content="width=device-width, height=device-height, initial-scale=1, interactive-widget=resizes-content"
+    />
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  </head>
+  <body style="margin: 0; overflow: hidden">
+    <script>
+      import("./target/wasm-example.js").then((module) => {
+        module.default(
+          new URL("target/wasm-example_bg.wasm", window.location.origin)
+        );
+      });
+    </script>
+    <script></script>
+    <div id="glcanvas" style="margin: 0; width: 100dvw; height: 100dvh"></div>
+  </body>
+</html>
