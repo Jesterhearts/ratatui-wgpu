@@ -262,7 +262,7 @@ pub enum Viewport {
 /// Height and width will default to 1x1, so don't forget to call
 /// [`Builder::with_dimensions`] to configure the backend presentation
 /// dimensions.
-pub struct Builder<'a, P: PostProcessor> {
+pub struct Builder<'a, P: PostProcessor = DefaultPostProcessor> {
     user_data: P::UserData,
     fonts: Fonts<'a>,
     instance: Option<Instance>,
