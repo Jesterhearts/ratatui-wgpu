@@ -15,9 +15,11 @@ its primary goals is to support serving TUI applications on the web.
 ## Goals
 The crate has the following goals in order of descending priority.
 1. Allow custom shader code to be run against rendered text.
-    - See [`PostProcessor`] for details. You can also see the implementation of the
-      [`shaders::DefaultPostProcessor`] or the `hello_pipeline` example for a demonstration of how
-      this works.
+    - See
+      [`PostProcessor`](https://docs.rs/ratatui-wgpu/latest/ratatui_wgpu/trait.PostProcessor.html)
+      for details. You can also see the implementation of the
+      [`shaders::DefaultPostProcessor`](https://docs.rs/ratatui-wgpu/latest/ratatui_wgpu/shaders/struct.DefaultPostProcessor.html)
+      or the `hello_pipeline` example for a demonstration of how this works.
 2. Target WASM.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping).
@@ -34,9 +36,10 @@ The crate has the following goals in order of descending priority.
 
 ## Known Limitations
 1. No support for rtl text.
+    - Supporting this falls under goal #3 (correctness), and is planned.
 2. No support for text blinking.
    - I'm open to adding this, but I have no use for it. This complicates the web story slightly,
-     since browsers don't support [`std::time`].
+     since browsers don't support [`std::time`](https://doc.rust-lang.org/std/time/index.html).
 3. No cursor rendering.
     - The location of the cursor is tracked, and operations using it should behave as expected, but
       the cursor is not rendered to the screen.

@@ -20,7 +20,7 @@ pub struct Font<'a> {
 }
 
 impl<'a> Font<'a> {
-    /// Create a new Font from from data. Returns [`None`] if the font cannot
+    /// Create a new Font from data. Returns [`None`] if the font cannot
     /// be parsed.
     pub fn new(data: &'a [u8]) -> Option<Self> {
         FontRef::from_index(data, 0).map(|font| Self {
@@ -54,7 +54,7 @@ impl Font<'_> {
 
 /// A collection of fonts to use for rendering. Supports font fallback.
 ///
-/// It is recommended (but not required) that all fonts have the same/very
+/// It is recommended, but not required, that all fonts have the same/very
 /// similar aspect ratio, or you may get unexpected results during rendering due
 /// to fallback.
 pub struct Fonts<'a> {
