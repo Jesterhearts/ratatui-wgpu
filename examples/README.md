@@ -29,7 +29,7 @@ $env:RUSTFLAGS = "-Ctarget-feature=+atomics,+bulk-memory,+mutable-globals"
 ```
 
 ```
-cargo +nightly build -Zbuild-std=std,panic_abort --release --features web --example hello_webworker --target wasm32-unknown-unknown
+cargo +nightly build -Zbuild-std="std,panic_abort" --release --features web --example hello_webworker --target wasm32-unknown-unknown
 wasm-bindgen --out-name wasm-example --out-dir examples/web/target --target web target/wasm32-unknown-unknown/release/examples/hello_webworker.wasm
 simple-http-server -i --nocache --coop --coep examples/web
 ```
