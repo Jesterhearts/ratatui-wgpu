@@ -282,7 +282,7 @@ impl PostProcessor for Pipeline {
         }
 
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("Text Blit Pass"),
+            label: None,
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: surface_view,
                 resolve_target: None,
