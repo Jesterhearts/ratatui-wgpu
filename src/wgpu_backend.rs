@@ -728,7 +728,7 @@ impl<'f, 's, P: PostProcessor> WgpuBackend<'f, 's, P> {
     /// Update the fonts used for rendering. This will cause a full repaint of
     /// the screen the next time [`WgpuBackend::flush`] is called.
     pub fn update_fonts(&mut self, new_fonts: Fonts<'f>) {
-        self.clear().unwrap();
+        self.dirty_rows.clear();
         self.cached.clear();
         self.fonts = new_fonts;
     }
