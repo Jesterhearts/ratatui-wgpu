@@ -1,4 +1,9 @@
 # ratatui-wgpu
+[![Crate Badge]](https://crates.io/crates/ratatui-wgpu)
+![Deps.rs Badge]
+[![Docs Badge]](https://docs.rs/ratatui-wgpu/latest/ratatui_wgpu/)
+![License Badge]
+
 A wgpu based rendering backend for ratatui.
 
 This started out as a custom rendering backend for a game I'm developing, and I thought I'd make it
@@ -44,3 +49,8 @@ The crate has the following goals in order of descending priority.
     - The location of the cursor is tracked, and operations using it should behave as expected, but
       the cursor is not rendered to the screen.
 
+
+[Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=flat-square
+[Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=flat-square
+[Docs Badge]: https://img.shields.io/docsrs/ratatui-wgpu?logo=rust&style=flat-square
+[License Badge]: https://img.shields.io/crates/l/ratatui-wgpu?style=flat-square
