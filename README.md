@@ -26,6 +26,8 @@ The crate has the following goals in order of descending priority.
       [`shaders::DefaultPostProcessor`](https://docs.rs/ratatui-wgpu/latest/ratatui_wgpu/shaders/struct.DefaultPostProcessor.html)
       or the `hello_pipeline` example for a demonstration of how this works.
 2. Target WASM.
+    - The `hello_web` example demonstrates its usage for web. `hello_webworker` shows how to use
+      this backend to render from a worker thread.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping).
     - This library relies on [swash](https://crates.io/crates/swash) for shaping and layout. Swash
