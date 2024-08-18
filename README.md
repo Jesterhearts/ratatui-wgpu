@@ -40,7 +40,7 @@ The crate has the following goals in order of descending priority.
 
 ## Known Limitations
 1. No support for complex combining sequences.
-  - Supporting this falls under #3 (correctness) and is planned.
+   - Supporting this falls under #3 (correctness) and is planned.
 2. No support for text blinking.
    - I'm open to adding this, but I have no use for it. This complicates the web story slightly,
      since browsers don't support [`std::time`](https://doc.rust-lang.org/std/time/index.html).
