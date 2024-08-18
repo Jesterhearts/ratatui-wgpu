@@ -10,9 +10,10 @@ use guillotiere::{
     Rectangle,
     Size,
 };
-use priority_queue::PriorityQueue;
 use ratatui::style::Modifier;
 use swash::CacheKey;
+
+use crate::utils::lru::Lru;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct Key {
@@ -61,60 +62,32 @@ impl Deref for Entry {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 struct CacheEntry {
-    age: u64,
     id: AllocId,
     value: CacheRect,
 }
 
-impl PartialOrd for CacheEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for CacheEntry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.age.cmp(&other.age)
-    }
-}
-
 pub(crate) struct Atlas {
-    lru: PriorityQueue<Key, CacheEntry>,
+    lru: Lru<Key, CacheEntry>,
     inner: AtlasAllocator,
-
-    next_age: u64,
 }
 
 impl Atlas {
     pub(crate) fn new(width: u32, height: u32) -> Self {
         Atlas {
-            lru: PriorityQueue::new(),
+            lru: Lru::default(),
             inner: AtlasAllocator::new(Size::new(width as i32, height as i32)),
-            next_age: u64::MAX,
         }
     }
 
     pub(crate) fn clear(&mut self) {
         self.lru.clear();
         self.inner.clear();
-        self.next_age = u64::MAX;
     }
 
     pub(crate) fn try_get(&mut self, key: &Key) -> Option<Entry> {
-        if self.next_age == 0 {
-            self.clear();
-            return None;
-        }
-
-        let mut existing = None;
-        self.lru.change_priority_by(key, |entry| {
-            entry.age = self.next_age;
-            existing = Some(entry.value);
-            self.next_age -= 1;
-        });
-        existing.map(Entry::Cached)
+        self.lru.get(key).map(|e| Entry::Cached(e.value))
     }
 
     pub(crate) fn get(&mut self, key: &Key, width: u32, height: u32) -> Entry {
@@ -123,16 +96,13 @@ impl Atlas {
             loop {
                 if let Some(alloc) = self.inner.allocate(Size::new(width as i32, height as i32)) {
                     let rect = alloc.rectangle.into();
-                    self.lru.push(
+                    self.lru.insert(
                         *key,
                         CacheEntry {
-                            age: self.next_age,
                             id: alloc.id,
                             value: alloc.rectangle.into(),
                         },
                     );
-
-                    self.next_age -= 1;
 
                     return Entry::Uncached(rect);
                 }
@@ -147,7 +117,7 @@ impl Atlas {
                         .map(|Change { old, new }| (old.id, new))
                         .collect::<HashMap<_, _>>();
 
-                    for (_, rect) in self.lru.iter_mut() {
+                    for rect in self.lru.iter_mut() {
                         if let Some(new_alloc) = changes.get(&rect.id) {
                             rect.id = new_alloc.id;
                             rect.value = new_alloc.rectangle.into();

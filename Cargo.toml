@@ -11,25 +11,27 @@ description  = "A wgpu based backend for ratatui."
 web = [ "wgpu/webgl" ]
 
 [[example]]
-name = "hello_web"
-path = "examples/web/hello_web.rs"
+name              = "hello_web"
+path              = "examples/web/hello_web.rs"
+required-features = [ "web" ]
 
 [[example]]
-name = "hello_webworker"
-path = "examples/web/hello_webworker.rs"
+name              = "hello_webworker"
+path              = "examples/web/hello_webworker.rs"
+required-features = [ "web" ]
 
 [dependencies]
-bytemuck       = { version = "1.17.0", features = [ "derive" ] }
-coolor         = "1.0.0"
-guillotiere    = "0.6.2"
-log            = { version = "0.4.22", default-features = false }
-palette        = { version = "0.7.6", default-features = false, features = [ "std", "named" ] }
-priority-queue = "2.1.0"
-ratatui        = { version = "0.28.0", default-features = false }
-swash          = "0.1.18"
-thiserror      = "1.0.63"
-unicode-width  = "0.1.13"
-wgpu           = "22.1.0"
+bytemuck      = { version = "1.17.0", features = [ "derive" ] }
+coolor        = "1.0.0"
+guillotiere   = "0.6.2"
+indexmap      = { version = "2.4.0", default-features = false, features = [ "std" ] }
+log           = { version = "0.4.22", default-features = false }
+palette       = { version = "0.7.6", default-features = false, features = [ "std", "named" ] }
+ratatui       = { version = "0.28.0", default-features = false }
+swash         = "0.1.18"
+thiserror     = "1.0.63"
+unicode-width = "0.1.13"
+wgpu          = "22.1.0"
 
 [dev-dependencies]
 anyhow                   = "1.0.86"
