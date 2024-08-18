@@ -30,9 +30,6 @@ The crate has the following goals in order of descending priority.
       this backend to render from a worker thread.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping).
-    - This library relies on [swash](https://crates.io/crates/swash) for shaping and layout. Swash
-      allows this library to handle most things I've tested it on, although it breaks down when
-      presented with complex sequences of combining characters (e.g. zalgo text).
 4. Reasonable performance.
 
 ## Non-goals
@@ -42,8 +39,8 @@ The crate has the following goals in order of descending priority.
      library.
 
 ## Known Limitations
-1. No support for rtl text.
-    - Supporting this falls under goal #3 (correctness), and is planned.
+1. No support for complex combining sequences.
+  - Supporting this falls under #3 (correctness) and is planned.
 2. No support for text blinking.
    - I'm open to adding this, but I have no use for it. This complicates the web story slightly,
      since browsers don't support [`std::time`](https://doc.rust-lang.org/std/time/index.html).
