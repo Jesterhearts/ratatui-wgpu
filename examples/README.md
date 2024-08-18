@@ -21,7 +21,7 @@ simple-http-server -i --nocache examples/web
 ```
 
 #### Additional instructions for `hello_webworker`
-You will need to use nightly Rust and confgure RUSTFLAGS to support atomics. In addition, the
+You will need to use nightly Rust and configure RUSTFLAGS to support atomics. In addition, the
 resulting binary will need to be served with coop and coep support.
 ```
 # Windows
