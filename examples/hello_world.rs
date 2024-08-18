@@ -94,7 +94,7 @@ impl ApplicationHandler for App {
                 f.render_widget(
                     Paragraph::new(Line::from(vec![
                         "Hello World!".bold().italic(),
-                        format!(" It is {}", Local::now().format("%H:%M:%S")).dim(),
+                        format!(" It is {}", Local::now().format("%H:%M:%S.%f")).dim(),
                     ]))
                     .block(Block::bordered()),
                     f.area(),

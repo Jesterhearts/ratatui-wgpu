@@ -1,54 +1,52 @@
+use std::hash::{
+    BuildHasher,
+    Hasher,
+    RandomState,
+};
+
 use ratatui::{
     buffer::Cell,
     style::Modifier,
 };
-use swash::{
-    text::cluster::{
-        CharCluster,
-        Status,
-    },
-    CacheKey,
-    FontRef,
-    Metrics,
-};
+use rustybuzz::Face;
 
 /// A Font which can be used for rendering.
 #[derive(Clone)]
 pub struct Font<'a> {
-    font: FontRef<'a>,
-    metrics: Metrics,
+    font: Face<'a>,
+    id: u64,
 }
 
 impl<'a> Font<'a> {
     /// Create a new Font from data. Returns [`None`] if the font cannot
     /// be parsed.
     pub fn new(data: &'a [u8]) -> Option<Self> {
-        FontRef::from_index(data, 0).map(|font| Self {
+        let mut hasher = RandomState::new().build_hasher();
+        hasher.write(data);
+
+        Face::from_slice(data, 0).map(|font| Self {
             font,
-            metrics: font.metrics(&[]),
+            id: hasher.finish(),
         })
     }
 }
 
 impl Font<'_> {
-    pub(crate) fn metrics(&self) -> Metrics {
-        self.metrics
+    pub(crate) fn id(&self) -> u64 {
+        self.id
     }
 
-    pub(crate) fn key(&self) -> CacheKey {
-        self.font.key
-    }
-
-    pub(crate) fn font(&self) -> FontRef {
-        self.font
+    pub(crate) fn font(&self) -> &Face {
+        &self.font
     }
 
     pub(crate) fn char_width(&self, height_px: u32) -> u32 {
-        let scale = height_px as f32 / (self.metrics.ascent + self.metrics.descent);
-        self.font
-            .glyph_metrics(&[])
-            .linear_scale(scale)
-            .advance_width(self.font.charmap().map('m')) as u32
+        let scale = height_px as f32 / (self.font.ascender() - self.font.descender()) as f32;
+        (self
+            .font
+            .glyph_hor_advance(self.font.glyph_index('m').unwrap_or_default())
+            .unwrap_or_default() as f32
+            * scale) as u32
     }
 }
 
@@ -165,18 +163,18 @@ impl<'a> Fonts<'a> {
 }
 
 impl<'a> Fonts<'a> {
+    pub(crate) fn count(&self) -> usize {
+        1 + self.bold.len() + self.italic.len() + self.bold_italic.len() + self.regular.len()
+    }
+
     pub(crate) fn last_resort(&self) -> &Font {
         &self.last_resort
     }
 
-    pub(crate) fn font_for_cell(
-        &self,
-        cluster: &mut CharCluster,
-        cell: &Cell,
-    ) -> (&Font, bool, bool) {
+    pub(crate) fn font_for_cell(&self, cell: &Cell) -> (&Font, bool, bool) {
         if cell.modifier.contains(Modifier::BOLD | Modifier::ITALIC) {
             self.select_font(
-                cluster,
+                cell.symbol(),
                 self.bold_italic
                     .iter()
                     .map(|f| (f, false, false))
@@ -188,7 +186,7 @@ impl<'a> Fonts<'a> {
             )
         } else if cell.modifier.contains(Modifier::BOLD) {
             self.select_font(
-                cluster,
+                cell.symbol(),
                 self.bold
                     .iter()
                     .map(|f| (f, false, false))
@@ -198,7 +196,7 @@ impl<'a> Fonts<'a> {
             )
         } else if cell.modifier.contains(Modifier::ITALIC) {
             self.select_font(
-                cluster,
+                cell.symbol(),
                 self.italic
                     .iter()
                     .map(|f| (f, false, false))
@@ -208,7 +206,7 @@ impl<'a> Fonts<'a> {
             )
         } else {
             self.select_font(
-                cluster,
+                cell.symbol(),
                 self.regular.iter().map(|f| (f, false, false)),
                 false,
                 false,
@@ -218,25 +216,25 @@ impl<'a> Fonts<'a> {
 
     fn select_font<'fonts>(
         &'fonts self,
-        cluster: &mut CharCluster,
+        cluster: &str,
         fonts: impl IntoIterator<Item = (&'fonts Font<'a>, bool, bool)>,
         last_resort_fake_bold: bool,
         last_resort_fake_italic: bool,
     ) -> (&'fonts Font<'a>, bool, bool) {
+        let mut max = 0;
         let mut font = None;
         for (candidate, fake_bold, fake_italic) in fonts.into_iter().chain(std::iter::once((
             &self.last_resort,
             last_resort_fake_bold,
             last_resort_fake_italic,
         ))) {
-            let map = candidate.font.charmap();
-            match cluster.map(|ch| map.map(ch)) {
-                Status::Discard => continue,
-                Status::Keep => font = Some((candidate, fake_bold, fake_italic)),
-                Status::Complete => {
-                    font = Some((candidate, fake_bold, fake_italic));
-                    break;
-                }
+            let count = cluster
+                .chars()
+                .filter_map(|ch| candidate.font().glyph_index(ch))
+                .count();
+            if count > max {
+                max = count;
+                font = Some((candidate, fake_bold, fake_italic));
             }
         }
 

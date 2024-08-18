@@ -11,15 +11,14 @@ use guillotiere::{
     Size,
 };
 use ratatui::style::Modifier;
-use swash::CacheKey;
 
 use crate::utils::lru::Lru;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct Key {
     pub(crate) style: Modifier,
-    pub(crate) glyph: u16,
-    pub(crate) font: CacheKey,
+    pub(crate) glyph: u32,
+    pub(crate) font: u64,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

@@ -31,10 +31,32 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
         self.age = u64::MAX;
     }
 
-    pub(crate) fn insert(&mut self, key: Key, value: Value) {
+    pub(crate) fn get_or_insert_with(
+        &mut self,
+        key: Key,
+        or_insert: impl FnOnce() -> Value,
+    ) -> &Value {
+        let index = match self.queue.entry(key) {
+            indexmap::map::Entry::Occupied(o) => o.index(),
+            indexmap::map::Entry::Vacant(v) => {
+                let index = v.index();
+                v.insert(Entry {
+                    age: self.age,
+                    value: or_insert(),
+                });
+                index
+            }
+        };
+
+        let index = self.bubble_down(index);
+        self.queue[index].age = self.age;
+        self.age -= 1;
+        &self.queue[index].value
+    }
+
+    pub(crate) fn insert(&mut self, key: Key, value: Value) -> &Value {
         if self.age == 0 {
             self.clear();
-            return;
         }
 
         let index = self
@@ -49,7 +71,9 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
             .0;
         self.age -= 1;
 
-        self.bubble_down(index);
+        let index = self.bubble_down(index);
+
+        &self.queue[index].value
     }
 
     pub(crate) fn get(&mut self, key: &Key) -> Option<&Value> {
@@ -72,6 +96,10 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
 
     pub(crate) fn pop(&mut self) -> Option<(Key, Value)> {
         self.pop_internal().map(|(key, entry)| (key, entry.value))
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.queue.len()
     }
 
     fn pop_internal(&mut self) -> Option<(Key, Entry<Value>)> {

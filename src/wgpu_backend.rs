@@ -27,30 +27,18 @@ use ratatui::{
         Modifier,
     },
 };
-use swash::{
-    scale::{
-        Render,
-        ScaleContext,
-        Source,
-        StrikeWith,
-    },
-    shape::{
-        cluster::GlyphCluster,
-        ShapeContext,
-    },
-    text::{
-        cluster::{
-            CharCluster,
-            Parser,
-            Token,
-        },
-        Codepoint,
-        Script,
-    },
-    zeno::{
-        Angle,
-        Transform,
-    },
+use rustybuzz::{
+    shape_with_plan,
+    ttf_parser::GlyphId,
+    GlyphBuffer,
+    UnicodeBuffer,
+};
+use tiny_skia::{
+    Paint,
+    PixmapMut,
+    Stroke,
+    Transform,
+    BYTES_PER_PIXEL,
 };
 use unicode_width::UnicodeWidthStr;
 use wgpu::{
@@ -127,9 +115,13 @@ use wgpu::{
 
 use crate::{
     shaders::DefaultPostProcessor,
-    utils::text_atlas::{
-        Atlas,
-        Key,
+    utils::{
+        plan_cache::PlanCache,
+        text_atlas::{
+            Atlas,
+            Key,
+        },
+        Outline,
     },
     Error,
     Font,
@@ -571,13 +563,13 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             ),
             cells: vec![],
             dirty_rows: vec![],
-            scale_context: ScaleContext::default(),
             cursor: (0, 0),
             surface,
             surface_config,
             device,
             queue,
-            shaper: ShapeContext::new(),
+            plan_cache: PlanCache::new(self.fonts.count().max(2)),
+            buffer: UnicodeBuffer::new(),
             viewport: self.viewport,
             cached: Atlas::new(CACHE_WIDTH, CACHE_HEIGHT),
             text_cache,
@@ -607,7 +599,6 @@ pub struct WgpuBackend<'f, 's, P: PostProcessor = DefaultPostProcessor> {
 
     cells: Vec<Cell>,
     dirty_rows: Vec<bool>,
-    scale_context: ScaleContext,
 
     cursor: (u16, u16),
 
@@ -618,7 +609,8 @@ pub struct WgpuBackend<'f, 's, P: PostProcessor = DefaultPostProcessor> {
     device: Device,
     queue: Queue,
 
-    shaper: ShapeContext,
+    plan_cache: PlanCache,
+    buffer: UnicodeBuffer,
 
     cached: Atlas,
     text_cache: Texture,
@@ -653,7 +645,10 @@ impl<'f, 's, P: PostProcessor> WgpuBackend<'f, 's, P> {
         let width = width.min(limits.max_texture_dimension_2d);
         let height = height.min(limits.max_texture_dimension_2d);
 
-        if width == self.surface_config.width && height == self.surface_config.height {
+        if width == self.surface_config.width && height == self.surface_config.height
+            || width == 0
+            || height == 0
+        {
             return;
         }
 
@@ -937,226 +932,182 @@ impl<'f, 's, P: PostProcessor> Backend for WgpuBackend<'f, 's, P> {
             self.dirty_rows[y] = false;
 
             let mut x = 0;
-            let mut shape = |font: &Font, fake_bold, fake_italic, cluster: &GlyphCluster| {
-                let cell = &row[cluster.data as usize];
+            let mut shape =
+                |font: &Font, fake_bold, fake_italic, buffer: GlyphBuffer| -> UnicodeBuffer {
+                    let metrics = font.font();
+                    let advance_scale = self.fonts.height_px() as f32
+                        / (metrics.ascender() - metrics.descender()) as f32;
 
-                let metrics = font.metrics();
-                let advance_scale =
-                    self.fonts.height_px() as f32 / (metrics.ascent + metrics.descent);
+                    for (info, position) in buffer
+                        .glyph_infos()
+                        .iter()
+                        .zip(buffer.glyph_positions().iter())
+                    {
+                        let cell = &row[info.cluster as usize];
 
-                let basey = y as u32 * self.fonts.height_px();
-                for glyph in cluster.glyphs {
-                    let basex = x;
-                    let advance = (glyph.advance * advance_scale) as u32;
-                    x += advance;
+                        let basey = y as i32 * self.fonts.height_px() as i32
+                            + (position.y_offset as f32 * advance_scale) as i32;
+                        let basex = x + (position.x_offset as f32 * advance_scale) as i32;
+                        let advance = (position.x_advance as f32 * advance_scale) as i32;
+                        x += advance;
 
-                    let key = Key {
-                        style: cell
-                            .modifier
-                            .intersection(Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED),
-                        glyph: glyph.id,
-                        font: font.key(),
-                    };
-
-                    let width = (font
-                        .font()
-                        .glyph_metrics(&[])
-                        .linear_scale(advance_scale)
-                        .advance_width(glyph.id) as u32)
-                        .max(font.char_width(self.fonts.height_px()));
-
-                    let cached = self.cached.get(
-                        &key,
-                        width / font.char_width(self.fonts.height_px()) * self.fonts.width_px(),
-                        self.fonts.height_px(),
-                    );
-                    pending.push((basey, basex, cell.clone(), cached));
-
-                    if cached.cached() {
-                        continue;
-                    }
-
-                    pending_cache_updates.entry(key).or_insert_with(|| {
-                        let metrics = font.metrics();
-                        let linear_scale =
-                            self.fonts.height_px() as f32 / (metrics.ascent + metrics.descent);
-                        let metrics = metrics.linear_scale(linear_scale);
-
-                        let ratio = {
-                            let scaled = font.metrics().scale(self.fonts.height_px() as f32);
-                            self.fonts.height_px() as f32 / (scaled.ascent + scaled.descent)
+                        let key = Key {
+                            style: cell.modifier.intersection(
+                                Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED,
+                            ),
+                            glyph: info.glyph_id,
+                            font: font.id(),
                         };
 
-                        let mut scaler = self
-                            .scale_context
-                            .builder(font.font())
-                            .hint(true)
-                            .size(self.fonts.height_px() as f32 * ratio)
-                            .build();
+                        let width = ((metrics
+                            .glyph_hor_advance(GlyphId(info.glyph_id as _))
+                            .unwrap_or_default() as f32
+                            * advance_scale) as u32)
+                            .max(font.char_width(self.fonts.height_px()));
 
-                        let mut render = Render::new(&[
-                            Source::Outline,
-                            Source::Bitmap(StrikeWith::BestFit),
-                            Source::ColorOutline(0),
-                            Source::ColorBitmap(StrikeWith::BestFit),
-                        ]);
+                        let cached = self.cached.get(
+                            &key,
+                            width / font.char_width(self.fonts.height_px()) * self.fonts.width_px(),
+                            self.fonts.height_px(),
+                        );
+                        pending.push((basey, basex, cell.clone(), cached));
 
-                        if fake_italic {
-                            render.transform(Some(
-                                Transform::skew(
-                                    Angle::from_degrees(14.0),
-                                    Angle::from_degrees(0.0),
-                                )
-                                .then_translate(-(width as f32 * 0.121), 0.0),
-                            ));
-                        }
-                        if fake_bold {
-                            render.embolden(0.5);
+                        if cached.cached() {
+                            continue;
                         }
 
-                        if let Some(image) = render.render(&mut scaler, glyph.id) {
-                            return (cached, Some((metrics, image)));
-                        }
+                        pending_cache_updates.entry(key).or_insert_with(|| {
+                            let mut render = Outline::default();
+                            if metrics
+                                .outline_glyph(GlyphId(info.glyph_id as _), &mut render)
+                                .is_some()
+                            {
+                                if let Some(path) = render.finish().and_then(|path| {
+                                    let skew = if fake_italic {
+                                        Transform::from_skew(-0.25, 0.0).post_translate(
+                                            -(width as f32 / advance_scale * 0.025),
+                                            0.0,
+                                        )
+                                    } else {
+                                        Transform::default()
+                                    };
 
-                        (cached, None)
-                    });
-                }
-            };
+                                    path.transform(
+                                        Transform::from_scale(1., -1.)
+                                            .post_concat(skew)
+                                            .post_translate(0., metrics.ascender() as f32)
+                                            .post_scale(advance_scale, advance_scale),
+                                    )
+                                }) {
+                                    return (
+                                        cached,
+                                        Some((
+                                            metrics.ascender(),
+                                            metrics
+                                                .underline_metrics()
+                                                .map(|m| m.thickness)
+                                                .unwrap_or(1),
+                                            fake_bold,
+                                            path,
+                                        )),
+                                    );
+                                }
+                            }
 
-            let script = row
-                .iter()
-                .flat_map(|r| r.symbol().chars().map(|ch| ch.script()))
-                .filter_map(|script| match script {
-                    Script::Unknown | Script::Common | Script::Inherited | Script::Latin => None,
-                    script => Some(script),
-                })
-                .next();
-            let script = script.unwrap_or(swash::text::Script::Latin);
+                            (cached, None)
+                        });
+                    }
 
-            let mut parser = Parser::new(
-                script,
-                row.iter()
-                    .enumerate()
-                    .flat_map(|(idx, cell)| cell.symbol().chars().map(move |ch| (idx, ch)))
-                    .scan(0u32, |state, (idx, ch)| {
-                        let offset = *state;
-                        *state += ch.len_utf8() as u32;
-
-                        Some(Token {
-                            ch,
-                            offset,
-                            len: ch.len_utf8() as u8,
-                            info: ch.into(),
-                            data: idx as u32,
-                        })
-                    }),
-            );
+                    buffer.clear()
+                };
 
             let mut current_font = self.fonts.last_resort();
-            let mut shaper = self
-                .shaper
-                .builder(current_font.font())
-                .script(script)
-                .build();
-
             let mut current_fake_bold = false;
             let mut current_fake_italic = false;
 
-            let mut cluster = CharCluster::new();
-            while parser.next(&mut cluster) {
-                let cell = &row[cluster.user_data() as usize];
+            for (cluster, cell) in row.iter().enumerate() {
+                let (font, fake_bold, fake_italic) = self.fonts.font_for_cell(cell);
 
-                let (font, fake_bold, fake_italic) = self.fonts.font_for_cell(&mut cluster, cell);
-
-                if font.key() != current_font.key()
+                if font.id() != current_font.id()
                     || current_fake_bold != fake_bold
                     || current_fake_italic != fake_italic
                 {
-                    shaper.shape_with(|cluster| {
-                        shape(
-                            current_font,
-                            current_fake_bold,
-                            current_fake_italic,
-                            cluster,
-                        )
-                    });
+                    let mut buffer = std::mem::take(&mut self.buffer);
+
+                    self.buffer = shape(
+                        current_font,
+                        current_fake_bold,
+                        current_fake_italic,
+                        shape_with_plan(
+                            current_font.font(),
+                            self.plan_cache.get(current_font, &mut buffer),
+                            buffer,
+                        ),
+                    );
 
                     current_font = font;
                     current_fake_bold = fake_bold;
                     current_fake_italic = fake_italic;
-                    shaper = self
-                        .shaper
-                        .builder(current_font.font())
-                        .script(script)
-                        .build();
                 }
 
-                shaper.add_cluster(&cluster);
+                for ch in cell.symbol().chars() {
+                    self.buffer.add(ch, cluster as u32);
+                }
             }
 
-            shaper.shape_with(|cluster| {
-                shape(
-                    current_font,
-                    current_fake_bold,
-                    current_fake_italic,
-                    cluster,
-                )
-            });
+            let mut buffer = std::mem::take(&mut self.buffer);
+            self.buffer = shape(
+                current_font,
+                current_fake_bold,
+                current_fake_italic,
+                shape_with_plan(
+                    current_font.font(),
+                    self.plan_cache.get(current_font, &mut buffer),
+                    buffer,
+                ),
+            );
         }
 
         for (key, (cached, maybe_path)) in pending_cache_updates {
-            let mut image = vec![0; cached.width as usize * cached.height as usize];
+            let mut image =
+                vec![[0; BYTES_PER_PIXEL]; cached.width as usize * cached.height as usize];
 
-            if let Some((metrics, path)) = maybe_path {
-                match path.content {
-                    swash::scale::image::Content::Mask => {
-                        for (idx, a) in path.data.into_iter().enumerate() {
-                            let x = idx as i32 % path.placement.width as i32 + path.placement.left;
-                            let y = idx as i32 / path.placement.width as i32
-                                + metrics.ascent as i32
-                                - path.placement.top;
+            if let Some((underline_position, underline_thickness, fake_bold, path)) = maybe_path {
+                let mut pixmap = PixmapMut::from_bytes(
+                    bytemuck::cast_slice_mut(&mut image),
+                    cached.width,
+                    cached.height,
+                )
+                .expect("Invalid image buffer");
 
-                            if x < 0
-                                || y < 0
-                                || x as u32 >= cached.width
-                                || y as u32 >= cached.height
-                            {
-                                continue;
-                            }
+                let mut paint = Paint::default();
+                paint.set_color_rgba8(255, 255, 255, 255);
+                pixmap.fill_path(
+                    &path,
+                    &paint,
+                    tiny_skia::FillRule::Winding,
+                    Transform::default(),
+                    None,
+                );
 
-                            image[y as usize * cached.width as usize + x as usize] = a;
-                        }
-                    }
-                    swash::scale::image::Content::SubpixelMask => {
-                        warn!("Subpixel masks are not currently supported")
-                    }
-                    swash::scale::image::Content::Color => {
-                        for (idx, rgba) in path.data.chunks(4).enumerate() {
-                            let x = idx as i32 % path.placement.width as i32 + path.placement.left;
-                            let y = idx as i32 / path.placement.width as i32
-                                + metrics.ascent as i32
-                                - path.placement.top;
-
-                            if x < 0
-                                || y < 0
-                                || x as u32 >= cached.width
-                                || y as u32 >= cached.height
-                            {
-                                continue;
-                            }
-
-                            image[y as usize * cached.width as usize + x as usize] = rgba[3];
-                        }
-                    }
+                if fake_bold {
+                    pixmap.stroke_path(
+                        &path,
+                        &paint,
+                        &Stroke {
+                            width: 1.5,
+                            ..Default::default()
+                        },
+                        Transform::default(),
+                        None,
+                    );
                 }
 
                 if key.style.contains(Modifier::UNDERLINED) {
-                    let (underline_position, underline_thickness) =
-                        (metrics.ascent as u32 + 1, metrics.stroke_size as u32);
-
                     for y in underline_position..underline_position + underline_thickness {
                         for x in 0..cached.width {
-                            image[y as usize * cached.width as usize + x as usize] = 255;
+                            image[y as usize * cached.width as usize + x as usize] =
+                                [255; BYTES_PER_PIXEL];
                         }
                     }
                 }
@@ -1173,7 +1124,7 @@ impl<'f, 's, P: PostProcessor> Backend for WgpuBackend<'f, 's, P> {
                     },
                     aspect: TextureAspect::All,
                 },
-                &image,
+                &image.into_iter().map(|[_, _, _, a]| a).collect::<Vec<_>>(),
                 ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(cached.width),
@@ -1303,8 +1254,8 @@ fn build_wgpu_state(device: &Device, drawable_width: u32, drawable_height: u32) 
     let text_dest = device.create_texture(&TextureDescriptor {
         label: Some("Text Compositor Out"),
         size: Extent3d {
-            width: drawable_width,
-            height: drawable_height,
+            width: drawable_width.max(1),
+            height: drawable_height.max(1),
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
