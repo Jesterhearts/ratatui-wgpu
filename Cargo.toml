@@ -6,6 +6,7 @@ edition      = "2021"
 rust-version = "1.75.0"
 repository   = "https://github.com/Jesterhearts/ratatui-wgpu"
 description  = "A wgpu based backend for ratatui."
+keywords     = [ "wasm", "tui", "rendering" ]
 
 [features]
 web = [ "wgpu/webgl" ]
