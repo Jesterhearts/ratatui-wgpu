@@ -1,9 +1,9 @@
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
+pub(crate) mod backend;
 pub(crate) mod fonts;
 pub mod shaders;
 pub(crate) mod utils;
-pub(crate) mod wgpu_backend;
 
 pub use ratatui;
 use thiserror::Error;
@@ -33,13 +33,13 @@ pub enum Error {
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
+pub use backend::{
+    builder::Builder,
+    wgpu_backend::WgpuBackend,
+    PostProcessor,
+    Viewport,
+};
 pub use fonts::{
     Font,
     Fonts,
-};
-pub use wgpu_backend::{
-    Builder,
-    PostProcessor,
-    Viewport,
-    WgpuBackend,
 };

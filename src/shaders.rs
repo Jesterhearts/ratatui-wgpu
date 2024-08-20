@@ -47,7 +47,7 @@ use wgpu::{
     VertexState,
 };
 
-use crate::wgpu_backend::PostProcessor;
+use crate::backend::PostProcessor;
 
 #[repr(C)]
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Debug, Clone, Copy)]
