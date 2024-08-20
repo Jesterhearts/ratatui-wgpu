@@ -48,9 +48,9 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
             }
         };
 
-        let index = self.bubble_down(index);
         self.queue[index].age = self.age;
         self.age -= 1;
+        let index = self.bubble_down(index);
         &self.queue[index].value
     }
 
@@ -107,8 +107,9 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
             return None;
         }
 
-        let index = self.bubble_down(0);
-        self.queue.shift_remove_index(index)
+        let result = self.queue.swap_remove_index(0);
+        self.bubble_down(0);
+        result
     }
 
     fn bubble_down(&mut self, mut index: usize) -> usize {
@@ -121,8 +122,10 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
             }
 
             if right_idx >= self.queue.len() {
-                self.queue.swap_indices(index, left_idx);
-                index = left_idx;
+                if self.queue[left_idx].age > self.queue[index].age {
+                    self.queue.swap_indices(index, left_idx);
+                    index = left_idx;
+                }
                 break;
             }
 
@@ -131,6 +134,10 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
             } else {
                 right_idx
             };
+
+            if self.queue[target].age < self.queue[index].age {
+                break;
+            }
 
             self.queue.swap_indices(index, target);
             index = target;
@@ -176,7 +183,7 @@ mod tests {
     fn heapify() {
         let mut lru = Lru::default();
 
-        for key in 0..5 {
+        for key in 0..500 {
             lru.insert(key, key);
         }
 
@@ -185,7 +192,7 @@ mod tests {
         let mut hasher = DefaultHasher::new();
         hasher.write_u64(seed);
 
-        for key in 0..5 {
+        for key in 0..500 {
             hasher.write_i32(key);
             if hasher.finish() % 2 == 0 {
                 lru.get(&key);
@@ -197,11 +204,50 @@ mod tests {
             lru_vals.push(entry.age);
         }
 
-        assert!(
-            lru_vals.windows(2).all(|lr| lr[0] > lr[1]),
-            "LRU Failed to order ages in descending order using seed {} - produced {:#?}",
+        assert_eq!(
+            lru_vals
+                .windows(2)
+                .enumerate()
+                .find(|(_, lr)| lr[0] <= lr[1]),
+            None,
+            "LRU Failed to order ages in descending order using seed {}",
             seed,
-            lru_vals,
+        );
+    }
+
+    #[test]
+    fn heapify_get_or_insert() {
+        let mut lru = Lru::default();
+
+        for key in 0..500 {
+            lru.insert(key, key);
+        }
+
+        let rand = RandomState::new();
+        let seed = rand.hash_one(0);
+        let mut hasher = DefaultHasher::new();
+        hasher.write_u64(seed);
+
+        for key in 0..1000 {
+            hasher.write_i32(key);
+            if hasher.finish() % 2 == 0 {
+                lru.get_or_insert_with(key, || key);
+            }
+        }
+
+        let mut lru_vals = vec![];
+        while let Some((_, entry)) = lru.pop_internal() {
+            lru_vals.push(entry.age);
+        }
+
+        assert_eq!(
+            lru_vals
+                .windows(2)
+                .enumerate()
+                .find(|(_, lr)| lr[0] <= lr[1]),
+            None,
+            "LRU Failed to order ages in descending order using seed {}",
+            seed,
         );
     }
 }
