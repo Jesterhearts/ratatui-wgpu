@@ -26,6 +26,8 @@ use wgpu::{
     TextureViewDescriptor,
 };
 
+use crate::colors::ANSI_TO_RGB;
+
 /// A pipeline for post-processing rendered text.
 pub trait PostProcessor {
     /// Custom user data which will be supplied during creation of the post
@@ -326,8 +328,8 @@ fn c2c(color: ratatui::style::Color, reset: Srgb<u8>) -> Srgb<u8> {
         Color::White => palette::named::WHITE,
         Color::Rgb(r, g, b) => Srgb::new(r, g, b),
         Color::Indexed(idx) => {
-            let rgb = coolor::AnsiColor::new(idx).to_rgb();
-            Srgb::new(rgb.r, rgb.g, rgb.b)
+            let [r, g, b] = ANSI_TO_RGB[idx as usize];
+            Srgb::new(r, g, b)
         }
     }
 }

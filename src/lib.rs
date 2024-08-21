@@ -1,6 +1,7 @@
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 pub(crate) mod backend;
+pub(crate) mod colors;
 pub(crate) mod fonts;
 pub mod shaders;
 pub(crate) mod utils;

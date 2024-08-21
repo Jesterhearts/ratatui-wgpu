@@ -23,7 +23,6 @@ required-features = [ "web" ]
 
 [dependencies]
 bytemuck      = { version = "1.17.0", features = [ "derive" ] }
-coolor        = "1.0.0"
 indexmap      = { version = "2.4.0", default-features = false, features = [ "std" ] }
 log           = { version = "0.4.22", default-features = false }
 palette       = { version = "0.7.6", default-features = false, features = [ "std", "named" ] }
