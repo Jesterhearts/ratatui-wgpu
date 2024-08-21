@@ -431,7 +431,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             plan_cache: PlanCache::new(self.fonts.count().max(2)),
             buffer: UnicodeBuffer::new(),
             viewport: self.viewport,
-            cached: Atlas::new(CACHE_WIDTH, CACHE_HEIGHT),
+            cached: Atlas::new(&self.fonts, CACHE_WIDTH, CACHE_HEIGHT),
             text_cache,
             text_indices: vec![],
             text_vertices: vec![],

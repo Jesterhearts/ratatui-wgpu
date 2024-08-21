@@ -41,7 +41,7 @@ impl Font<'_> {
     }
 
     pub(crate) fn char_width(&self, height_px: u32) -> u32 {
-        let scale = height_px as f32 / (self.font.ascender() - self.font.descender()) as f32;
+        let scale = height_px as f32 / self.font.height() as f32;
         (self
             .font
             .glyph_hor_advance(self.font.glyph_index('m').unwrap_or_default())

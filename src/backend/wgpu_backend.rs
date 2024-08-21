@@ -238,7 +238,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
     /// the screen the next time [`WgpuBackend::flush`] is called.
     pub fn update_fonts(&mut self, new_fonts: Fonts<'f>) {
         self.dirty_rows.clear();
-        self.cached.clear();
+        self.cached.match_fonts(&new_fonts);
         self.fonts = new_fonts;
     }
 
@@ -442,8 +442,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             let mut shape =
                 |font: &Font, fake_bold, fake_italic, buffer: GlyphBuffer| -> UnicodeBuffer {
                     let metrics = font.font();
-                    let advance_scale = self.fonts.height_px() as f32
-                        / (metrics.ascender() - metrics.descender()) as f32;
+                    let advance_scale = self.fonts.height_px() as f32 / metrics.height() as f32;
 
                     for (info, position) in buffer
                         .glyph_infos()
@@ -492,7 +491,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                                 if let Some(path) = render.finish().and_then(|path| {
                                     let skew = if fake_italic {
                                         Transform::from_skew(-0.25, 0.0).post_translate(
-                                            -(width as f32 / advance_scale * 0.025),
+                                            -(width as f32 / advance_scale * 0.121),
                                             0.0,
                                         )
                                     } else {
@@ -774,6 +773,7 @@ mod tests {
         },
         Terminal,
     };
+    use serial_test::serial;
     use wgpu::{
         CommandEncoderDescriptor,
         Device,
@@ -812,6 +812,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn a_z() {
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
@@ -869,6 +870,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn arabic() {
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
@@ -914,6 +916,63 @@ mod tests {
 
             let pixels = image.pixels().copied().collect::<Vec<_>>();
             let golden = load_from_memory(include_bytes!("goldens/arabic.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn really_wide() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("Ｈｅｌｌｏ, ｗｏｒｌｄ!"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/really_wide.png")).unwrap();
             let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
 
             assert!(

@@ -11,6 +11,7 @@ struct Entry<Value> {
     value: Value,
 }
 
+#[derive(Debug)]
 pub(crate) struct Lru<Key, Value> {
     queue: IndexMap<Key, Entry<Value>>,
     age: u64,
@@ -94,6 +95,24 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
         }
     }
 
+    pub(crate) fn oldest(&mut self) -> Option<&Value> {
+        if self.age == 0 {
+            self.clear();
+            return None;
+        }
+
+        if self.queue.is_empty() {
+            return None;
+        }
+
+        self.queue[0].age = self.age;
+        self.age -= 1;
+
+        let index = self.bubble_down(0);
+
+        Some(&self.queue[index].value)
+    }
+
     pub(crate) fn pop(&mut self) -> Option<(Key, Value)> {
         self.pop_internal().map(|(key, entry)| (key, entry.value))
     }
@@ -144,10 +163,6 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
         }
 
         index
-    }
-
-    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Value> {
-        self.queue.values_mut().map(|v| &mut v.value)
     }
 }
 
