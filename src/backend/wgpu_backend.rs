@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    marker::PhantomData,
     mem::size_of,
     num::NonZeroU64,
 };
@@ -59,14 +60,16 @@ use wgpu::{
     SurfaceConfiguration,
     Texture,
     TextureAspect,
-    TextureViewDescriptor,
 };
 
 use crate::{
     backend::{
         build_wgpu_state,
         c2c,
+        private::Token,
         PostProcessor,
+        RenderSurface,
+        RenderTexture,
         TextCachePipeline,
         TextVertexMember,
         Viewport,
@@ -91,14 +94,19 @@ const NULL_CELL: Cell = Cell::new("");
 
 /// A ratatui backend leveraging wgpu for rendering.
 ///
-/// Constructed using a [`Builder`].
+/// Constructed using a [`Builder`](crate::Builder).
 ///
 /// Limitations:
 /// - The cursor is tracked but not rendered.
 /// - No support for blinking text.
 /// - No builtin accessibilty, although [`WgpuBackend::get_text`] is provided to
 ///   access the screen's contents.
-pub struct WgpuBackend<'f, 's, P: PostProcessor = DefaultPostProcessor> {
+pub struct WgpuBackend<
+    'f,
+    's,
+    P: PostProcessor = DefaultPostProcessor,
+    S: RenderSurface<'s> = Surface<'s>,
+> {
     pub(super) post_process: P,
 
     pub(super) cells: Vec<Cell>,
@@ -108,7 +116,8 @@ pub struct WgpuBackend<'f, 's, P: PostProcessor = DefaultPostProcessor> {
 
     pub(super) viewport: Viewport,
 
-    pub(super) surface: Surface<'s>,
+    pub(super) surface: S,
+    pub(super) _surface: PhantomData<&'s S>,
     pub(super) surface_config: SurfaceConfiguration,
     pub(super) device: Device,
     pub(super) queue: Queue,
@@ -130,7 +139,7 @@ pub struct WgpuBackend<'f, 's, P: PostProcessor = DefaultPostProcessor> {
     pub(super) reset_bg: Srgb<u8>,
 }
 
-impl<'f, 's, P: PostProcessor> WgpuBackend<'f, 's, P> {
+impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
     /// Get the [`PostProcessor`] associated with this backend.
     pub fn post_processor(&self) -> &P {
         &self.post_process
@@ -167,7 +176,8 @@ impl<'f, 's, P: PostProcessor> WgpuBackend<'f, 's, P> {
 
         self.surface_config.width = width;
         self.surface_config.height = height;
-        self.surface.configure(&self.device, &self.surface_config);
+        self.surface
+            .configure(&self.device, &self.surface_config, Token);
 
         let width = width - inset_width;
         let height = height - inset_height;
@@ -295,31 +305,24 @@ impl<'f, 's, P: PostProcessor> WgpuBackend<'f, 's, P> {
             }
         }
 
-        let output = match self.surface.get_current_texture() {
-            Ok(output) => output,
-            Err(err) => {
-                error!("{err}");
-                return;
-            }
+        let Some(texture) = self.surface.get_current_texture(Token) else {
+            return;
         };
-        let view = output
-            .texture
-            .create_view(&TextureViewDescriptor::default());
 
         self.post_process.process(
             &mut encoder,
             &self.queue,
             &self.wgpu_state.text_dest_view,
             &self.surface_config,
-            &view,
+            texture.get_view(Token),
         );
 
         self.queue.submit(Some(encoder.finish()));
-        output.present();
+        texture.present(Token);
     }
 }
 
-impl<'f, 's, P: PostProcessor> Backend for WgpuBackend<'f, 's, P> {
+impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f, 's, P, S> {
     fn draw<'a, I>(&mut self, content: I) -> std::io::Result<()>
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
@@ -751,5 +754,174 @@ impl<'f, 's, P: PostProcessor> Backend for WgpuBackend<'f, 's, P> {
                 Ok(())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+
+    use image::{
+        load_from_memory,
+        GenericImageView,
+        ImageBuffer,
+        Rgba,
+    };
+    use ratatui::{
+        widgets::{
+            Block,
+            Paragraph,
+        },
+        Terminal,
+    };
+    use wgpu::{
+        CommandEncoderDescriptor,
+        Device,
+        Extent3d,
+        ImageCopyBuffer,
+        ImageDataLayout,
+        Queue,
+    };
+
+    use crate::{
+        backend::HeadlessSurface,
+        shaders::DefaultPostProcessor,
+        Builder,
+        Font,
+    };
+
+    fn tex2buffer(device: &Device, queue: &Queue, surface: &HeadlessSurface) {
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+        encoder.copy_texture_to_buffer(
+            surface.texture.as_ref().unwrap().as_image_copy(),
+            ImageCopyBuffer {
+                buffer: surface.buffer.as_ref().unwrap(),
+                layout: ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(surface.buffer_width),
+                    rows_per_image: Some(surface.height),
+                },
+            },
+            Extent3d {
+                width: surface.width,
+                height: surface.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit(Some(encoder.finish()));
+    }
+
+    #[test]
+    fn a_z() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
+                        .expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/a_z.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    fn arabic() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
+                        .expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("مرحبا بالعالم"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/arabic.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+
+        surface.buffer.as_ref().unwrap().unmap();
     }
 }

@@ -37,6 +37,8 @@ pub use backend::{
     builder::Builder,
     wgpu_backend::WgpuBackend,
     PostProcessor,
+    RenderSurface,
+    RenderTexture,
     Viewport,
 };
 pub use fonts::{

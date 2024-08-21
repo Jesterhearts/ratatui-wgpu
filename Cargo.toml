@@ -43,7 +43,9 @@ console_log              = "1.0.0"
 crossbeam-queue          = "0.3.11"
 env_logger               = "0.11.5"
 futures-lite             = "2.3.0"
+image                    = { version = "0.25.2", default-features = false, features = [ "png" ] }
 js-sys                   = "0.3.70"
+oneshot                  = "0.1.8"
 wasm-bindgen             = "0.2"
 wasm-bindgen-futures     = "0.4.42"
 web-sys                  = { version = "0.3.70", features = [ "MessageEvent", "Worker", "WorkerOptions", "WorkerType" ] }

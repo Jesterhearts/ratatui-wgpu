@@ -86,11 +86,17 @@ impl ApplicationHandler for App {
 
             *backend.borrow_mut() = Some(
                 Terminal::new(
-                    Builder::from_font(Font::new(include_bytes!("../assets/Fairfax.ttf")).unwrap())
-                        .with_dimensions(height, width)
-                        .build_with_target(wgpu::SurfaceTarget::Canvas(canvas))
-                        .await
+                    Builder::from_font(
+                        Font::new(include_bytes!(concat!(
+                            env!("CARGO_MANIFEST_DIR"),
+                            "/src/backend/fonts/CascadiaMono-Regular.ttf"
+                        )))
                         .unwrap(),
+                    )
+                    .with_dimensions(height, width)
+                    .build_with_target(wgpu::SurfaceTarget::Canvas(canvas))
+                    .await
+                    .unwrap(),
                 )
                 .unwrap(),
             );

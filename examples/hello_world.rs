@@ -55,12 +55,18 @@ impl ApplicationHandler for App {
         self.backend = Some(
             Terminal::new(
                 futures_lite::future::block_on(
-                    Builder::from_font(Font::new(include_bytes!("assets/Fairfax.ttf")).unwrap())
-                        .with_dimensions(
-                            NonZeroU32::new(size.width).unwrap(),
-                            NonZeroU32::new(size.height).unwrap(),
-                        )
-                        .build_with_target(self.window.as_ref().unwrap().clone()),
+                    Builder::from_font(
+                        Font::new(include_bytes!(concat!(
+                            env!("CARGO_MANIFEST_DIR"),
+                            "/src/backend/fonts/CascadiaMono-Regular.ttf"
+                        )))
+                        .unwrap(),
+                    )
+                    .with_dimensions(
+                        NonZeroU32::new(size.width).unwrap(),
+                        NonZeroU32::new(size.height).unwrap(),
+                    )
+                    .build_with_target(self.window.as_ref().unwrap().clone()),
                 )
                 .unwrap(),
             )

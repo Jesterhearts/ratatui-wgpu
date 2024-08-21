@@ -75,7 +75,11 @@ pub async fn render_entrypoint(ptr: u32, canvas: wasm_bindgen::JsValue) {
                     t.set(RefCell::new(
                         Terminal::new(
                             Builder::from_font(
-                                Font::new(include_bytes!("../assets/Fairfax.ttf")).unwrap(),
+                                Font::new(include_bytes!(concat!(
+                                    env!("CARGO_MANIFEST_DIR"),
+                                    "/src/backend/fonts/CascadiaMono-Regular.ttf"
+                                )))
+                                .unwrap(),
                             )
                             .with_dimensions(
                                 NonZeroU32::new(canvas.height()).unwrap(),

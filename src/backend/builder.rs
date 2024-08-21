@@ -1,6 +1,9 @@
-use std::num::{
-    NonZeroU32,
-    NonZeroU64,
+use std::{
+    marker::PhantomData,
+    num::{
+        NonZeroU32,
+        NonZeroU64,
+    },
 };
 
 use palette::Srgb;
@@ -65,8 +68,10 @@ use crate::{
     backend::{
         build_wgpu_state,
         c2c,
+        private::Token,
         wgpu_backend::WgpuBackend,
         PostProcessor,
+        RenderSurface,
         TextCachePipeline,
         TextVertexMember,
         Viewport,
@@ -87,7 +92,7 @@ use crate::{
 const CACHE_WIDTH: u32 = 1800;
 const CACHE_HEIGHT: u32 = 1200;
 
-/// Builds a [WgpuBackend] instance.
+/// Builds a [`WgpuBackend`] instance.
 ///
 /// Height and width will default to 1x1, so don't forget to call
 /// [`Builder::with_dimensions`] to configure the backend presentation
@@ -274,9 +279,24 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
     /// the provided surface - see [`Builder::with_instance`]. If one is not
     /// provided, a default instance will be created.
     pub async fn build_with_surface<'s>(
-        mut self,
+        self,
         surface: Surface<'s>,
     ) -> Result<WgpuBackend<'a, 's, P>> {
+        self.build_with_render_surface(surface).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn build_headless(
+        self,
+    ) -> Result<WgpuBackend<'a, 'static, P, super::HeadlessSurface>> {
+        self.build_with_render_surface(super::HeadlessSurface::default())
+            .await
+    }
+
+    async fn build_with_render_surface<'s, S: RenderSurface<'s> + 's>(
+        mut self,
+        mut surface: S,
+    ) -> Result<WgpuBackend<'a, 's, P, S>> {
         let instance = self.instance.get_or_insert_with(|| {
             wgpu::Instance::new(InstanceDescriptor {
                 backends: Backends::default(),
@@ -287,7 +307,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                compatible_surface: Some(&surface),
+                compatible_surface: surface.wgpu_surface(Token),
                 ..Default::default()
             })
             .await
@@ -315,6 +335,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
                 &adapter,
                 self.width.get().min(limits.max_texture_dimension_2d),
                 self.height.get().min(limits.max_texture_dimension_2d),
+                Token,
             )
             .ok_or(Error::SurfaceConfigurationRequestFailed)?;
 
@@ -322,7 +343,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             surface_config.present_mode = mode;
         }
 
-        surface.configure(&device, &surface_config);
+        surface.configure(&device, &surface_config, Token);
 
         let (inset_width, inset_height) = match self.viewport {
             Viewport::Full => (0, 0),
@@ -403,6 +424,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             dirty_rows: vec![],
             cursor: (0, 0),
             surface,
+            _surface: PhantomData,
             surface_config,
             device,
             queue,
