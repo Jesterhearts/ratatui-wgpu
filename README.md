@@ -29,7 +29,8 @@ The crate has the following goals in order of descending priority.
     - The `hello_web` example demonstrates its usage for web. `hello_webworker` shows how to use
       this backend to render from a worker thread.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
-3. Correct text rendering (including shaping).
+3. Correct text rendering (including shaping and mixed bidi).
+   - This should currently be working correctly with the exception of complex combining sequences.
 4. Reasonable performance.
 
 ## Non-goals

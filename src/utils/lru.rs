@@ -37,6 +37,11 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
         key: Key,
         or_insert: impl FnOnce() -> Value,
     ) -> &Value {
+        if self.age == 0 {
+            self.age = u64::MAX;
+            self.re_index(0);
+        }
+
         let index = match self.queue.entry(key) {
             indexmap::map::Entry::Occupied(o) => o.index(),
             indexmap::map::Entry::Vacant(v) => {
@@ -57,7 +62,8 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
 
     pub(crate) fn insert(&mut self, key: Key, value: Value) -> &Value {
         if self.age == 0 {
-            self.clear();
+            self.age = u64::MAX;
+            self.re_index(0);
         }
 
         let index = self
@@ -79,8 +85,8 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
 
     pub(crate) fn get(&mut self, key: &Key) -> Option<&Value> {
         if self.age == 0 {
-            self.clear();
-            return None;
+            self.age = u64::MAX;
+            self.re_index(0);
         }
 
         if let Some(mut index) = self.queue.get_index_of(key) {
@@ -97,8 +103,8 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
 
     pub(crate) fn oldest(&mut self) -> Option<&Value> {
         if self.age == 0 {
-            self.clear();
-            return None;
+            self.age = u64::MAX;
+            self.re_index(0);
         }
 
         if self.queue.is_empty() {
@@ -163,6 +169,22 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
         }
 
         index
+    }
+
+    fn re_index(&mut self, index: usize) {
+        debug_assert!(self.age > 0);
+        if index >= self.queue.len() {
+            return;
+        }
+
+        self.queue[index].age = self.age;
+        self.age -= 1;
+
+        let left_idx = index * 2 + 1;
+        let right_idx = index * 2 + 2;
+
+        self.re_index(left_idx);
+        self.re_index(right_idx);
     }
 }
 
@@ -260,6 +282,48 @@ mod tests {
                 .windows(2)
                 .enumerate()
                 .find(|(_, lr)| lr[0] <= lr[1]),
+            None,
+            "LRU Failed to order ages in descending order using seed {}",
+            seed,
+        );
+    }
+
+    #[test]
+    fn reindex() {
+        let mut lru = Lru::default();
+
+        for key in 0..500 {
+            lru.insert(key, key);
+        }
+
+        let rand = RandomState::new();
+        let seed = rand.hash_one(0);
+        let mut hasher = DefaultHasher::new();
+        hasher.write_u64(seed);
+
+        for key in 0..1000 {
+            hasher.write_i32(key);
+            if hasher.finish() % 2 == 0 {
+                lru.get(&key);
+            }
+        }
+
+        lru.age = u64::MAX;
+        lru.re_index(0);
+
+        let mut lru_vals = vec![];
+        while let Some((_, entry)) = lru.pop_internal() {
+            lru_vals.push(entry.age);
+        }
+
+        dbg!(&lru_vals);
+
+        assert_eq!(lru_vals[0], u64::MAX);
+        assert_eq!(
+            lru_vals
+                .windows(2)
+                .enumerate()
+                .find(|(_, lr)| lr[0] - 1 != lr[1]),
             None,
             "LRU Failed to order ages in descending order using seed {}",
             seed,
