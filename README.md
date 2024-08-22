@@ -61,22 +61,20 @@ definitely not minimal.
 4. log: Integrating with standard logging infrastructure is very useful. This might be replaced with
    tracing, but I'm not going to go without some sort of logging and I'm not going to implement it
    myself.
-5. palette: This is currently used for named colors and to implement text dimming. It will be
-   replaced with hardcoded named colors and a manual implementation of dimming.
-6. rustybuzz: Font shaping and rendering is _hard_ and way out of scope for this library. There will
-   always be an external dependency on some other library to do this for me. Rustybuzz happens to be
-   (imo) the current best choice.
-7. thiserror: I don't want to write the Error trait by hand. I might consider removing this if doing
+5. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
+   external dependency on some other library to do this for me. Rustybuzz happens to be (imo) the
+   current best choice.
+6. thiserror: I don't want to write the Error trait by hand. I might consider removing this if doing
    so doesn't turn out to be so bad.
-8. tiny-skia: I don't want to implement path stroking & filling by hand, and this library is
+7. tiny-skia: I don't want to implement path stroking & filling by hand, and this library is
    reasonably small and well maintained.
-9. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
+8. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
    most of the code would be based on a implementation like this anyways. This performs well enough
    even though cells have to be concatenated into a single string for processing. There are smarter
    ways to to this processing I'm sure, but I'll optimize when I need to.
-10. unicode-width: I need to access the width of characters to figure out row layout and
-    implementing this myself seems silly. This is already pulled in by ratatui, so it doesn't really
-    increase the size of the dependency tree.
+9. unicode-width: I need to access the width of characters to figure out row layout and implementing
+   this myself seems silly. This is already pulled in by ratatui, so it doesn't really increase the
+   size of the dependency tree.
 
 [Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=flat-square
 [Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=flat-square

@@ -5,10 +5,6 @@ use std::{
     num::NonZeroU64,
 };
 
-use palette::{
-    rgb::channels,
-    Srgb,
-};
 use ratatui::{
     backend::{
         Backend,
@@ -79,6 +75,10 @@ use crate::{
         Viewport,
         WgpuState,
     },
+    colors::{
+        dim,
+        Rgb,
+    },
     fonts::{
         Font,
         Fonts,
@@ -141,8 +141,8 @@ pub struct WgpuBackend<
     pub(super) wgpu_state: WgpuState,
 
     pub(super) fonts: Fonts<'f>,
-    pub(super) reset_fg: Srgb<u8>,
-    pub(super) reset_bg: Srgb<u8>,
+    pub(super) reset_fg: Rgb,
+    pub(super) reset_bg: Rgb,
 }
 
 impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
@@ -688,12 +688,13 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                 };
 
                 if cell.modifier.contains(Modifier::DIM) {
-                    use palette::Lighten;
-                    fg_color = fg_color.into_format::<f32>().lighten(0.5).into_format();
+                    fg_color = dim(fg_color, bg_color);
                 }
 
-                let fg_color: u32 = fg_color.into_u32::<channels::Rgba>();
-                let bg_color: u32 = bg_color.into_u32::<channels::Rgba>();
+                let [r, g, b] = fg_color;
+                let fg_color: u32 = u32::from_be_bytes([r, g, b, 255]);
+                let [r, g, b] = bg_color;
+                let bg_color: u32 = u32::from_be_bytes([r, g, b, 255]);
 
                 for offset_y in (0..cached.height).step_by(self.fonts.height_px() as usize) {
                     for offset_x in (0..cached.width).step_by(self.fonts.width_px() as usize) {

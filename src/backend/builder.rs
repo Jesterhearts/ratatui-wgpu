@@ -6,7 +6,6 @@ use std::{
     },
 };
 
-use palette::Srgb;
 use ratatui::style::Color;
 use rustybuzz::UnicodeBuffer;
 use wgpu::{
@@ -76,6 +75,13 @@ use crate::{
         TextVertexMember,
         Viewport,
     },
+    colors::{
+        named::{
+            BLACK,
+            WHITE,
+        },
+        Rgb,
+    },
     fonts::{
         Font,
         Fonts,
@@ -106,8 +112,8 @@ pub struct Builder<'a, P: PostProcessor = DefaultPostProcessor> {
     width: NonZeroU32,
     height: NonZeroU32,
     viewport: Viewport,
-    reset_fg: Srgb<u8>,
-    reset_bg: Srgb<u8>,
+    reset_fg: Rgb,
+    reset_bg: Rgb,
 }
 
 impl<'a, P: PostProcessor> Builder<'a, P>
@@ -126,8 +132,8 @@ where
             width: NonZeroU32::new(1).unwrap(),
             height: NonZeroU32::new(1).unwrap(),
             viewport: Viewport::Full,
-            reset_fg: palette::named::BLACK,
-            reset_bg: palette::named::WHITE,
+            reset_fg: BLACK,
+            reset_bg: WHITE,
         }
     }
 }
@@ -145,8 +151,8 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             width: NonZeroU32::new(1).unwrap(),
             height: NonZeroU32::new(1).unwrap(),
             viewport: Viewport::Full,
-            reset_fg: palette::named::BLACK,
-            reset_bg: palette::named::WHITE,
+            reset_fg: BLACK,
+            reset_bg: WHITE,
         }
     }
 

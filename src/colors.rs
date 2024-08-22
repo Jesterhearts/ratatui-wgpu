@@ -1,7 +1,41 @@
+pub(crate) type Rgb = [u8; 3];
+
+pub(crate) fn dim(color: Rgb, bg: Rgb) -> Rgb {
+    let [r, g, b] = color;
+    let [bgr, bgg, bgb] = bg;
+    [
+        (r as u16 / 2 + bgr as u16 / 2).min(255) as u8,
+        (g as u16 / 2 + bgg as u16 / 2).min(255) as u8,
+        (b as u16 / 2 + bgb as u16 / 2).min(255) as u8,
+    ]
+}
+
+/// https://www.w3.org/TR/SVG11/types.html#ColorKeywords
+pub(crate) mod named {
+    use crate::colors::Rgb;
+
+    pub(crate) const BLACK: Rgb = [0, 0, 0];
+    pub(crate) const GREEN: Rgb = [0, 128, 0];
+    pub(crate) const RED: Rgb = [255, 0, 0];
+    pub(crate) const BLUE: Rgb = [0, 0, 255];
+    pub(crate) const CYAN: Rgb = [0, 255, 255];
+    pub(crate) const DARKGRAY: Rgb = [169, 169, 169];
+    pub(crate) const GRAY: Rgb = [128, 128, 128];
+    pub(crate) const LIGHTBLUE: Rgb = [173, 216, 230];
+    pub(crate) const LIGHTCYAN: Rgb = [224, 255, 255];
+    pub(crate) const LIGHTGREEN: Rgb = [144, 238, 144];
+    pub(crate) const LIGHTMAGENTA: Rgb = [255, 128, 255];
+    pub(crate) const LIGHTRED: Rgb = [240, 128, 128];
+    pub(crate) const LIGHTYELLOW: Rgb = [255, 255, 224];
+    pub(crate) const MAGENTA: Rgb = [255, 0, 255];
+    pub(crate) const WHITE: Rgb = [255, 255, 255];
+    pub(crate) const YELLOW: Rgb = [255, 255, 0];
+}
+
 /// This could be split into `[standard table]` + `[high intensity table]` +
 /// `<6x6x6 cube fn>` + `<grayscale step fn>`, but a lookup table is only 768
 /// bytes and way simpler to implement.
-pub(crate) const ANSI_TO_RGB: [[u8; 3]; 256] = [
+pub(crate) const ANSI_TO_RGB: [Rgb; 256] = [
     [0x00, 0x00, 0x00],
     [0x80, 0x00, 0x00],
     [0x00, 0x80, 0x00],

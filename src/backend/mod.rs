@@ -1,7 +1,6 @@
 pub(crate) mod builder;
 pub(crate) mod wgpu_backend;
 
-use palette::Srgb;
 use ratatui::style::Color;
 use wgpu::{
     Adapter,
@@ -26,7 +25,11 @@ use wgpu::{
     TextureViewDescriptor,
 };
 
-use crate::colors::ANSI_TO_RGB;
+use crate::colors::{
+    named::*,
+    Rgb,
+    ANSI_TO_RGB,
+};
 
 /// A pipeline for post-processing rendered text.
 pub trait PostProcessor {
@@ -307,30 +310,27 @@ struct WgpuState {
     text_dest_view: TextureView,
 }
 
-fn c2c(color: ratatui::style::Color, reset: Srgb<u8>) -> Srgb<u8> {
+fn c2c(color: ratatui::style::Color, reset: Rgb) -> Rgb {
     match color {
         Color::Reset => reset,
-        Color::Black => palette::named::BLACK,
-        Color::Red => palette::named::RED,
-        Color::Green => palette::named::GREEN,
-        Color::Yellow => palette::named::YELLOW,
-        Color::Blue => palette::named::BLUE,
-        Color::Magenta => palette::named::MAGENTA,
-        Color::Cyan => palette::named::CYAN,
-        Color::Gray => palette::named::GRAY,
-        Color::DarkGray => palette::named::DARKGRAY,
-        Color::LightRed => Srgb::new(240, 128, 128),
-        Color::LightGreen => palette::named::LIGHTGREEN,
-        Color::LightYellow => palette::named::LIGHTYELLOW,
-        Color::LightBlue => palette::named::LIGHTBLUE,
-        Color::LightMagenta => Srgb::new(255, 128, 255),
-        Color::LightCyan => palette::named::LIGHTCYAN,
-        Color::White => palette::named::WHITE,
-        Color::Rgb(r, g, b) => Srgb::new(r, g, b),
-        Color::Indexed(idx) => {
-            let [r, g, b] = ANSI_TO_RGB[idx as usize];
-            Srgb::new(r, g, b)
-        }
+        Color::Black => BLACK,
+        Color::Red => RED,
+        Color::Green => GREEN,
+        Color::Yellow => YELLOW,
+        Color::Blue => BLUE,
+        Color::Magenta => MAGENTA,
+        Color::Cyan => CYAN,
+        Color::Gray => GRAY,
+        Color::DarkGray => DARKGRAY,
+        Color::LightRed => LIGHTRED,
+        Color::LightGreen => LIGHTGREEN,
+        Color::LightYellow => LIGHTYELLOW,
+        Color::LightBlue => LIGHTBLUE,
+        Color::LightMagenta => LIGHTMAGENTA,
+        Color::LightCyan => LIGHTCYAN,
+        Color::White => WHITE,
+        Color::Rgb(r, g, b) => [r, g, b],
+        Color::Indexed(idx) => ANSI_TO_RGB[idx as usize],
     }
 }
 
