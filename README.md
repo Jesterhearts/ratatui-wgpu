@@ -50,7 +50,7 @@ The crate has the following goals in order of descending priority.
 
 ## Dependencies
 This crate attempts to be reasonable with its usage of external dependencies, although it is
-definitely not minimal
+definitely not minimal.
 1. ratatui & wgpu: This crate's core purpose is to create a backend for the former using the latter,
    so these are both necessary.
 2. bytemuck: Working directly with byte slices is needed to interface with the shader code, and this
@@ -70,7 +70,11 @@ definitely not minimal
    so doesn't turn out to be so bad.
 8. tiny-skia: I don't want to implement path stroking & filling by hand, and this library is
    reasonably small and well maintained.
-9. unicode-width: I need to access the width of characters to figure out row layout and
+9. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
+   most of the code would be based on a implementation like this anyways. This performs well enough
+   even though cells have to be concatenated into a single string for processing. There are smarter
+   ways to to this processing I'm sure, but I'll optimize when I need to.
+10. unicode-width: I need to access the width of characters to figure out row layout and
     implementing this myself seems silly. This is already pulled in by ratatui, so it doesn't really
     increase the size of the dependency tree.
 

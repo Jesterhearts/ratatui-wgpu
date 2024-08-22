@@ -30,6 +30,7 @@ ratatui       = { version = "0.28.0", default-features = false }
 rustybuzz     = "0.18.0"
 thiserror     = "1.0.63"
 tiny-skia     = { version = "0.11.4", default-features = false, features = [ "simd", "std" ] }
+unicode-bidi  = "0.3.15"
 unicode-width = "0.1.13"
 wgpu          = "22.1.0"
 

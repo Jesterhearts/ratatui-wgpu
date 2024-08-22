@@ -430,6 +430,8 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             queue,
             plan_cache: PlanCache::new(self.fonts.count().max(2)),
             buffer: UnicodeBuffer::new(),
+            row: String::new(),
+            rowmap: vec![],
             viewport: self.viewport,
             cached: Atlas::new(&self.fonts, CACHE_WIDTH, CACHE_HEIGHT),
             text_cache,

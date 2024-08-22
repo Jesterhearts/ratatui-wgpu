@@ -35,6 +35,10 @@ use tiny_skia::{
     Transform,
     BYTES_PER_PIXEL,
 };
+use unicode_bidi::{
+    Level,
+    ParagraphBidiInfo,
+};
 use unicode_width::UnicodeWidthStr;
 use wgpu::{
     util::{
@@ -124,6 +128,8 @@ pub struct WgpuBackend<
 
     pub(super) plan_cache: PlanCache,
     pub(super) buffer: UnicodeBuffer,
+    pub(super) row: String,
+    pub(super) rowmap: Vec<usize>,
 
     pub(super) cached: Atlas,
     pub(super) text_cache: Texture,
@@ -436,6 +442,15 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                 continue;
             }
 
+            self.row.clear();
+            self.rowmap.clear();
+            for (idx, cell) in row.iter().enumerate() {
+                for ch in cell.symbol().chars() {
+                    self.row.push(ch);
+                    self.rowmap.push(idx);
+                }
+            }
+
             self.dirty_rows[y] = false;
 
             let mut x = 0;
@@ -527,37 +542,49 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     buffer.clear()
                 };
 
+            let bidi = ParagraphBidiInfo::new(&self.row, None);
+            let (levels, runs) = bidi.visual_runs(0..bidi.levels.len());
+
             let mut current_font = self.fonts.last_resort();
             let mut current_fake_bold = false;
             let mut current_fake_italic = false;
+            let mut current_level = Level::ltr();
 
-            for (cluster, cell) in row.iter().enumerate() {
-                let (font, fake_bold, fake_italic) = self.fonts.font_for_cell(cell);
+            let mut offset = 0;
+            for (level, range) in runs.into_iter().map(|run| (levels[run.start], run)) {
+                let slice = &self.row[range];
+                for ch in slice.chars() {
+                    let cell_idx = self.rowmap[offset];
+                    let cell = &row[cell_idx];
+                    let (font, fake_bold, fake_italic) = self.fonts.font_for_cell(cell);
 
-                if font.id() != current_font.id()
-                    || current_fake_bold != fake_bold
-                    || current_fake_italic != fake_italic
-                {
-                    let mut buffer = std::mem::take(&mut self.buffer);
+                    if font.id() != current_font.id()
+                        || current_fake_bold != fake_bold
+                        || current_fake_italic != fake_italic
+                        || current_level != level
+                    {
+                        let mut buffer = std::mem::take(&mut self.buffer);
 
-                    self.buffer = shape(
-                        current_font,
-                        current_fake_bold,
-                        current_fake_italic,
-                        shape_with_plan(
-                            current_font.font(),
-                            self.plan_cache.get(current_font, &mut buffer),
-                            buffer,
-                        ),
-                    );
+                        self.buffer = shape(
+                            current_font,
+                            current_fake_bold,
+                            current_fake_italic,
+                            shape_with_plan(
+                                current_font.font(),
+                                self.plan_cache.get(current_font, &mut buffer),
+                                buffer,
+                            ),
+                        );
 
-                    current_font = font;
-                    current_fake_bold = fake_bold;
-                    current_fake_italic = fake_italic;
-                }
+                        current_font = font;
+                        current_fake_bold = fake_bold;
+                        current_fake_italic = fake_italic;
+                        current_level = level;
+                    }
 
-                for ch in cell.symbol().chars() {
-                    self.buffer.add(ch, cluster as u32);
+                    self.buffer.add(ch, cell_idx as u32);
+
+                    offset += 1;
                 }
             }
 
@@ -973,6 +1000,67 @@ mod tests {
 
             let pixels = image.pixels().copied().collect::<Vec<_>>();
             let golden = load_from_memory(include_bytes!("goldens/really_wide.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn mixed() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
+                        .expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(
+                    Paragraph::new("Hello World! مرحبا بالعالم 0123456789"),
+                    area,
+                );
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/mixed.png")).unwrap();
             let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
 
             assert!(
