@@ -14,6 +14,7 @@ use rustybuzz::Face;
 #[derive(Clone)]
 pub struct Font<'a> {
     font: Face<'a>,
+    advance: f32,
     id: u64,
 }
 
@@ -24,9 +25,15 @@ impl<'a> Font<'a> {
         let mut hasher = RandomState::new().build_hasher();
         hasher.write(data);
 
-        Face::from_slice(data, 0).map(|font| Self {
-            font,
-            id: hasher.finish(),
+        Face::from_slice(data, 0).map(|font| {
+            let advance = font
+                .glyph_hor_advance(font.glyph_index('m').unwrap_or_default())
+                .unwrap_or_default() as f32;
+            Self {
+                font,
+                advance,
+                id: hasher.finish(),
+            }
         })
     }
 }
@@ -42,11 +49,7 @@ impl Font<'_> {
 
     pub(crate) fn char_width(&self, height_px: u32) -> u32 {
         let scale = height_px as f32 / self.font.height() as f32;
-        (self
-            .font
-            .glyph_hor_advance(self.font.glyph_index('m').unwrap_or_default())
-            .unwrap_or_default() as f32
-            * scale) as u32
+        (self.advance * scale) as u32
     }
 }
 
