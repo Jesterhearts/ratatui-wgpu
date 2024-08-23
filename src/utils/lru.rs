@@ -316,8 +316,6 @@ mod tests {
             lru_vals.push(entry.age);
         }
 
-        dbg!(&lru_vals);
-
         assert_eq!(lru_vals[0], u64::MAX);
         assert_eq!(
             lru_vals

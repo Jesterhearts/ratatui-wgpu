@@ -129,7 +129,7 @@ pub struct WgpuBackend<
     pub(super) plan_cache: PlanCache,
     pub(super) buffer: UnicodeBuffer,
     pub(super) row: String,
-    pub(super) rowmap: Vec<usize>,
+    pub(super) rowmap: Vec<u16>,
 
     pub(super) cached: Atlas,
     pub(super) text_cache: Texture,
@@ -445,10 +445,9 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             self.row.clear();
             self.rowmap.clear();
             for (idx, cell) in row.iter().enumerate() {
-                for ch in cell.symbol().chars() {
-                    self.row.push(ch);
-                    self.rowmap.push(idx);
-                }
+                self.rowmap
+                    .resize(self.rowmap.len() + cell.symbol().len(), idx as u16);
+                self.row.push_str(cell.symbol());
             }
 
             self.dirty_rows[y] = false;
@@ -550,11 +549,11 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             let mut current_fake_italic = false;
             let mut current_level = Level::ltr();
 
-            let mut offset = 0;
             for (level, range) in runs.into_iter().map(|run| (levels[run.start], run)) {
-                let slice = &self.row[range];
-                for ch in slice.chars() {
-                    let cell_idx = self.rowmap[offset];
+                let chars = &self.row[range.clone()];
+                let cells = &self.rowmap[range];
+                for (idx, ch) in chars.char_indices() {
+                    let cell_idx = cells[idx] as usize;
                     let cell = &row[cell_idx];
                     let (font, fake_bold, fake_italic) = self.fonts.font_for_cell(cell);
 
@@ -583,8 +582,6 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     }
 
                     self.buffer.add(ch, cell_idx as u32);
-
-                    offset += 1;
                 }
             }
 
@@ -795,6 +792,8 @@ mod tests {
         Rgba,
     };
     use ratatui::{
+        style::Stylize,
+        text::Line,
         widgets::{
             Block,
             Paragraph,
@@ -1034,7 +1033,7 @@ mod tests {
                 let area = block.inner(f.area());
                 f.render_widget(block, f.area());
                 f.render_widget(
-                    Paragraph::new("Hello World! مرحبا بالعالم 0123456789"),
+                    Paragraph::new("Hello World! مرحبا بالعالم 0123456789000000000"),
                     area,
                 );
             })
@@ -1062,6 +1061,71 @@ mod tests {
 
             let pixels = image.pixels().copied().collect::<Vec<_>>();
             let golden = load_from_memory(include_bytes!("goldens/mixed.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn mixed_colors() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
+                        .expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(
+                    Paragraph::new(Line::from(vec![
+                        "Hello World!".green(),
+                        "مرحبا بالعالم".blue(),
+                        "0123456789".dim(),
+                    ])),
+                    area,
+                );
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/mixed_colors.png")).unwrap();
             let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
 
             assert!(

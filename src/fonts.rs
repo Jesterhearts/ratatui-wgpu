@@ -231,13 +231,21 @@ impl<'a> Fonts<'a> {
             last_resort_fake_bold,
             last_resort_fake_italic,
         ))) {
-            let count = cluster
-                .chars()
-                .filter_map(|ch| candidate.font().glyph_index(ch))
-                .count();
+            let (count, last_idx) =
+                cluster
+                    .chars()
+                    .enumerate()
+                    .fold((0, 0), |(mut count, _), (idx, ch)| {
+                        count += usize::from(candidate.font().glyph_index(ch).is_some());
+                        (count, idx)
+                    });
             if count > max {
                 max = count;
                 font = Some((candidate, fake_bold, fake_italic));
+            }
+
+            if count == last_idx + 1 {
+                break;
             }
         }
 
