@@ -101,24 +101,6 @@ impl<Key: Hash + Eq, Value> Lru<Key, Value> {
         }
     }
 
-    pub(crate) fn oldest(&mut self) -> Option<&Value> {
-        if self.age == 0 {
-            self.age = u64::MAX;
-            self.re_index(0);
-        }
-
-        if self.queue.is_empty() {
-            return None;
-        }
-
-        self.queue[0].age = self.age;
-        self.age -= 1;
-
-        let index = self.bubble_down(0);
-
-        Some(&self.queue[index].value)
-    }
-
     pub(crate) fn pop(&mut self) -> Option<(Key, Value)> {
         self.pop_internal().map(|(key, entry)| (key, entry.value))
     }

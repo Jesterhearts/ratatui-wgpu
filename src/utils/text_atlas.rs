@@ -107,19 +107,15 @@ impl Atlas {
         );
 
         self.try_get(key).unwrap_or_else(|| {
-            if self.next_entry == self.max_entries {
-                Entry::Uncached(
-                    self.lru
-                        .oldest()
-                        .copied()
-                        .expect("Atlas has zero max entries!"),
-                )
+            let rect = if self.next_entry == self.max_entries {
+                self.lru.pop().expect("Atlas has zero max entries!").1
             } else {
-                let rect = self.slot_to_rect(self.next_entry, width);
-                self.next_entry += 1;
-                self.lru.insert(*key, rect);
-                Entry::Uncached(rect)
-            }
+                self.slot_to_rect(self.next_entry, width)
+            };
+
+            self.next_entry += 1;
+            self.lru.insert(*key, rect);
+            Entry::Uncached(rect)
         })
     }
 
@@ -132,5 +128,55 @@ impl Atlas {
             width,
             height: self.entry_height,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::style::Modifier;
+
+    use crate::{
+        utils::text_atlas::{
+            Atlas,
+            Key,
+        },
+        Font,
+        Fonts,
+    };
+
+    #[test]
+    fn reuse() {
+        let fonts = Fonts::new(
+            Font::new(include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/backend/fonts/Fairfax.ttf"
+            )))
+            .unwrap(),
+            24,
+        );
+        let mut atlas = Atlas::new(&fonts, 24, 24);
+
+        for idx in 0..atlas.max_entries {
+            atlas.get(
+                &Key {
+                    style: Modifier::default(),
+                    glyph: idx as _,
+                    font: idx as _,
+                },
+                12,
+                24,
+            );
+        }
+
+        let last_key = Key {
+            style: Modifier::default(),
+            glyph: u32::MAX,
+            font: u32::MAX as _,
+        };
+
+        let last_inserted = atlas.get(&last_key, 12, 24);
+        let post_insertion = atlas.get(&last_key, 12, 24);
+
+        assert_eq!(*last_inserted, *post_insertion);
     }
 }
