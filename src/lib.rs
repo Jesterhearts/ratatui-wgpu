@@ -1,5 +1,6 @@
 //! # Getting Started
-//! Check out the [examples](https://github.com/Jesterhearts/ratatui-wgpu/tree/main/examples) for a number of programs using `winit` for both native and web.
+//! Check out the [examples](https://github.com/Jesterhearts/ratatui-wgpu/tree/main/examples)
+//! for a number of programs using`winit` for both native and web.
 //!
 //! A [`WgpuBackend`] can be constructed using a [`Builder`] and then provided
 //! to a [`Terminal`](ratatui::Terminal). After that, rendering can be done as
