@@ -63,9 +63,10 @@ definitely not minimal.
    dirty.
 4. bytemuck: Working directly with byte slices is needed to interface with the shader code, and this
    nicely encapsulates work that would otherwise be unsafe.
-5. indexmap: Used internally to implement an lru heap which has O(1) lookup for entries. This could
-   be replaced with a `HashMap<Key, usize>` + `Vec<Value>`, but doing so would require a lot of
-   tedious & error prone book keeping when bubbling entries down the heap.
+5. indexmap: Used internally to implement an lru heap which has O(1) lookup for entries and to order
+   glyphs in target cells for rendering. This could be replaced with a `HashMap<Key, usize>` +
+   `Vec<Value>`, but doing so would require a lot of tedious & error prone book keeping when
+   bubbling entries down the heap.
 6. log: Integrating with standard logging infrastructure is very useful. This might be replaced with
    tracing, but I'm not going to go without some sort of logging.
 7. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
