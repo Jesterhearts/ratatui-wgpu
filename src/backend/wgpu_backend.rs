@@ -222,7 +222,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         let chars_wide = width / self.fonts.width_px();
         let chars_high = height / self.fonts.height_px();
 
-        if chars_high != current_width as u32 || chars_high != current_height as u32 {
+        if chars_wide != current_width as u32 || chars_high != current_height as u32 {
             self.cells.clear();
             self.rendered.clear();
             self.sourced.clear();
