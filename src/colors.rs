@@ -1,15 +1,5 @@
 pub(crate) type Rgb = [u8; 3];
 
-pub(crate) fn dim(color: Rgb, bg: Rgb) -> Rgb {
-    let [r, g, b] = color;
-    let [bgr, bgg, bgb] = bg;
-    [
-        (r as u16 / 2 + bgr as u16 / 2).min(255) as u8,
-        (g as u16 / 2 + bgg as u16 / 2).min(255) as u8,
-        (b as u16 / 2 + bgb as u16 / 2).min(255) as u8,
-    ]
-}
-
 /// https://www.w3.org/TR/SVG11/types.html#ColorKeywords
 pub(crate) mod named {
     use crate::colors::Rgb;

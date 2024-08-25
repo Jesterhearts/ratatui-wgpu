@@ -3,6 +3,7 @@ use std::{
     hash::Hash,
 };
 
+use ahash::RandomState;
 use indexmap::IndexMap;
 
 #[derive(Debug)]
@@ -13,7 +14,7 @@ struct Entry<Value> {
 
 #[derive(Debug)]
 pub(crate) struct Lru<Key, Value> {
-    queue: IndexMap<Key, Entry<Value>>,
+    queue: IndexMap<Key, Entry<Value>, RandomState>,
     age: u64,
 }
 

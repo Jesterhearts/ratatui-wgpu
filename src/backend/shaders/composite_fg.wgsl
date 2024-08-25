@@ -1,7 +1,6 @@
 struct VertexOutput {
-    @location(0) TEX0: vec2<f32>,
+    @location(0) UV: vec2<f32>,
     @location(1) @interpolate(flat) FgColor: u32,
-    @location(2) @interpolate(flat) BgColor: u32,
     @builtin(position) gl_Position: vec4<f32>,
 }
 
@@ -13,10 +12,9 @@ fn vs_main(
     @location(0) VertexCoord: vec2<f32>,
     @location(1) UV: vec2<f32>,
     @location(2) FgColor: u32,
-    @location(3) BgColor: u32,
 ) -> VertexOutput {
     let gl_Position = vec4<f32>((2.0 * VertexCoord / ScreenSize.xy - 1.0) * vec2(1.0, -1.0), 0.0, 1.0);
-    return VertexOutput(UV, FgColor, BgColor, gl_Position);
+    return VertexOutput(UV, FgColor, gl_Position);
 }
 
 struct FragmentOutput {
@@ -42,9 +40,8 @@ fn unpack_color(color: u32) -> vec4<f32> {
 
 
 @fragment
-fn fs_main(@location(0) UV: vec2<f32>, @location(1) @interpolate(flat) FgColor: u32, @location(2) @interpolate(flat) BgColor: u32) -> FragmentOutput {
-    let bgColorUnpacked = unpack_color(BgColor);
+fn fs_main(@location(0) UV: vec2<f32>, @location(1) @interpolate(flat) FgColor: u32) -> FragmentOutput {
     let fgColorUnpacked = unpack_color(FgColor);
     let textureColor = textureSample(Atlas, Sampler, UV / AtlasSize.xy);
-    return FragmentOutput(vec4<f32>(mix(bgColorUnpacked.rgb, fgColorUnpacked.rgb, textureColor.r), 1.0));
+    return FragmentOutput(vec4<f32>(fgColorUnpacked.rgb, textureColor.r * fgColorUnpacked.a));
 }

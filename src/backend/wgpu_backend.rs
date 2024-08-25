@@ -1,10 +1,16 @@
 use std::{
-    collections::HashMap,
+    collections::{
+        HashMap,
+        HashSet,
+    },
     marker::PhantomData,
     mem::size_of,
     num::NonZeroU64,
 };
 
+use ahash::RandomState;
+use bitvec::vec::BitVec;
+use indexmap::IndexMap;
 use ratatui::{
     backend::{
         Backend,
@@ -70,15 +76,14 @@ use crate::{
         PostProcessor,
         RenderSurface,
         RenderTexture,
-        TextCachePipeline,
+        TextBgVertexMember,
+        TextCacheBgPipeline,
+        TextCacheFgPipeline,
         TextVertexMember,
         Viewport,
         WgpuState,
     },
-    colors::{
-        dim,
-        Rgb,
-    },
+    colors::Rgb,
     fonts::{
         Font,
         Fonts,
@@ -88,6 +93,7 @@ use crate::{
         plan_cache::PlanCache,
         text_atlas::{
             Atlas,
+            CacheRect,
             Key,
         },
         Outline,
@@ -95,6 +101,14 @@ use crate::{
 };
 
 const NULL_CELL: Cell = Cell::new("");
+
+/// Map from (x, y, glyph) -> (cell index, cache entry).
+/// We use an IndexMap because we want a consistent rendering order for
+/// vertices.
+type Rendered = IndexMap<(i32, i32, GlyphId), (usize, CacheRect), RandomState>;
+
+/// Set of (x, y, glyph, char width).
+type Sourced = HashSet<(i32, i32, GlyphId, u32), RandomState>;
 
 /// A ratatui backend leveraging wgpu for rendering.
 ///
@@ -115,6 +129,9 @@ pub struct WgpuBackend<
 
     pub(super) cells: Vec<Cell>,
     pub(super) dirty_rows: Vec<bool>,
+    pub(super) dirty_cells: BitVec,
+    pub(super) rendered: Vec<Rendered>,
+    pub(super) sourced: Vec<Sourced>,
 
     pub(super) cursor: (u16, u16),
 
@@ -133,9 +150,11 @@ pub struct WgpuBackend<
 
     pub(super) cached: Atlas,
     pub(super) text_cache: Texture,
-    pub(super) text_indices: Vec<[u16; 6]>,
+    pub(super) bg_vertices: Vec<TextBgVertexMember>,
+    pub(super) text_indices: Vec<[u32; 6]>,
     pub(super) text_vertices: Vec<TextVertexMember>,
-    pub(super) text_compositor: TextCachePipeline,
+    pub(super) text_bg_compositor: TextCacheBgPipeline,
+    pub(super) text_fg_compositor: TextCacheFgPipeline,
     pub(super) text_screen_size_buffer: Buffer,
 
     pub(super) wgpu_state: WgpuState,
@@ -192,16 +211,9 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         let chars_high = height / self.fonts.height_px();
 
         if chars_high != current_width as u32 || chars_high != current_height as u32 {
-            let mut new_buffer = vec![Cell::EMPTY; (chars_high * chars_wide) as usize];
-            for (src, dst) in self
-                .cells
-                .chunks(current_width as usize)
-                .zip(new_buffer.chunks_mut(chars_wide as usize))
-            {
-                let overlap = src.len().min(dst.len());
-                dst[..overlap].clone_from_slice(&src[..overlap]);
-            }
-            self.cells = new_buffer;
+            self.cells.clear();
+            self.rendered.clear();
+            self.sourced.clear();
         }
 
         self.dirty_rows.clear();
@@ -275,7 +287,13 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
                 ]));
             }
 
-            let vertices = self.device.create_buffer_init(&BufferInitDescriptor {
+            let bg_vertices = self.device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("Text Bg Vertices"),
+                contents: bytemuck::cast_slice(&self.bg_vertices),
+                usage: BufferUsages::VERTEX,
+            });
+
+            let fg_vertices = self.device.create_buffer_init(&BufferInitDescriptor {
                 label: Some("Text Vertices"),
                 contents: bytemuck::cast_slice(&self.text_vertices),
                 usage: BufferUsages::VERTEX,
@@ -301,13 +319,23 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
                     ..Default::default()
                 });
 
-                text_render_pass.set_pipeline(&self.text_compositor.pipeline);
-                text_render_pass.set_bind_group(0, &self.text_compositor.fs_uniforms, &[]);
-                text_render_pass.set_bind_group(1, &self.text_compositor.atlas_bindings, &[]);
+                text_render_pass.set_index_buffer(indices.slice(..), IndexFormat::Uint32);
 
-                text_render_pass.set_vertex_buffer(0, vertices.slice(..));
-                text_render_pass.set_index_buffer(indices.slice(..), IndexFormat::Uint16);
-                text_render_pass.draw_indexed(0..self.text_indices.len() as u32 * 6, 0, 0..1);
+                text_render_pass.set_pipeline(&self.text_bg_compositor.pipeline);
+                text_render_pass.set_bind_group(0, &self.text_bg_compositor.fs_uniforms, &[]);
+                text_render_pass.set_vertex_buffer(0, bg_vertices.slice(..));
+                text_render_pass.draw_indexed(0..(self.bg_vertices.len() as u32 / 4) * 6, 0, 0..1);
+
+                text_render_pass.set_pipeline(&self.text_fg_compositor.pipeline);
+                text_render_pass.set_bind_group(0, &self.text_fg_compositor.fs_uniforms, &[]);
+                text_render_pass.set_bind_group(1, &self.text_fg_compositor.atlas_bindings, &[]);
+
+                text_render_pass.set_vertex_buffer(0, fg_vertices.slice(..));
+                text_render_pass.draw_indexed(
+                    0..(self.text_vertices.len() as u32 / 4) * 6,
+                    0,
+                    0..1,
+                );
             }
         }
 
@@ -337,6 +365,14 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 
         self.cells
             .resize(bounds.height as usize * bounds.width as usize, Cell::EMPTY);
+        self.sourced.resize_with(
+            bounds.height as usize * bounds.width as usize,
+            Sourced::default,
+        );
+        self.rendered.resize_with(
+            bounds.height as usize * bounds.width as usize,
+            Rendered::default,
+        );
         self.dirty_rows.resize(bounds.height as usize, true);
 
         for (x, y, cell) in content {
@@ -355,10 +391,12 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     break;
                 }
 
+                let bg = row[idx].bg;
                 let next = idx + 1 + row[idx].symbol().width().saturating_sub(1);
                 for dest in row[idx + 1..next].iter_mut() {
                     if *dest != NULL_CELL {
                         *dest = NULL_CELL;
+                        dest.bg = bg;
                         *dirty = true;
                     }
                 }
@@ -433,26 +471,48 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 
     fn flush(&mut self) -> std::io::Result<()> {
         let bounds = self.size()?;
-        let mut pending = vec![];
+        self.dirty_cells.clear();
+        self.dirty_cells.resize(self.cells.len(), false);
 
-        let mut pending_cache_updates = HashMap::<_, _>::default();
+        let mut pending_cache_updates = HashMap::<_, _, RandomState>::default();
 
-        for (y, row) in self.cells.chunks(bounds.width as usize).enumerate() {
+        for (y, (row, sourced)) in self
+            .cells
+            .chunks(bounds.width as usize)
+            .zip(self.sourced.chunks_mut(bounds.width as usize))
+            .enumerate()
+        {
             if !self.dirty_rows[y] {
                 continue;
             }
 
+            self.dirty_rows[y] = false;
+            let mut new_sourced = vec![Sourced::default(); bounds.width as usize];
+
+            // This block concatenates the strings for the row into one string for bidi
+            // resolution, then maps bytes for the string to their associated cell index. It
+            // also maps the row's cell index to the font that can source all glyphs for
+            // that cell.
             self.row.clear();
             self.rowmap.clear();
+            let mut fontmap = Vec::with_capacity(self.rowmap.capacity());
             for (idx, cell) in row.iter().enumerate() {
+                self.row.push_str(cell.symbol());
                 self.rowmap
                     .resize(self.rowmap.len() + cell.symbol().len(), idx as u16);
-                self.row.push_str(cell.symbol());
+                fontmap.push(self.fonts.font_for_cell(cell));
             }
 
-            self.dirty_rows[y] = false;
-
             let mut x = 0;
+            // rustbuzz provides a non-zero x-advance for the first character in a cluster
+            // with combining characters. The remainder of the cluster doesn't account for
+            // this advance, so if we advance prior to rendering them, we end up with all of
+            // the associated characters being offset by a cell. To combat this, we only
+            // bump the x-advance after we've finished processing all of the characters in a
+            // cell. This assumes that we 1) always get a non-zero advance at the beginning
+            // of a cluster and 2) the next cluster in the sequence starts with a non-zero
+            // advance.
+            let mut next_advance = 0;
             let mut shape =
                 |font: &Font, fake_bold, fake_italic, buffer: GlyphBuffer| -> UnicodeBuffer {
                     let metrics = font.font();
@@ -464,17 +524,28 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         .zip(buffer.glyph_positions().iter())
                     {
                         let cell = &row[info.cluster as usize];
+                        let sourced = &mut new_sourced[info.cluster as usize];
 
                         let basey = y as i32 * self.fonts.height_px() as i32
                             + (position.y_offset as f32 * advance_scale) as i32;
-                        let basex = x + (position.x_offset as f32 * advance_scale) as i32;
                         let advance = (position.x_advance as f32 * advance_scale) as i32;
-                        x += advance;
+                        if advance != 0 {
+                            x += next_advance;
+                            next_advance = advance;
+                        }
+                        let basex = x + (position.x_offset as f32 * advance_scale) as i32;
+
+                        // This assumes that we only want to underline the first character in the
+                        // cluster, and that the remaining characters are all combining characters
+                        // which don't need an underline.
+                        let set = if advance != 0 {
+                            Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED
+                        } else {
+                            Modifier::BOLD | Modifier::ITALIC
+                        };
 
                         let key = Key {
-                            style: cell.modifier.intersection(
-                                Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED,
-                            ),
+                            style: cell.modifier.intersection(set),
                             glyph: info.glyph_id,
                             font: font.id(),
                         };
@@ -484,13 +555,28 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                             .unwrap_or_default() as f32
                             * advance_scale) as u32)
                             .max(font.char_width(self.fonts.height_px()));
+                        let width = width / font.char_width(self.fonts.height_px());
 
                         let cached = self.cached.get(
                             &key,
-                            width / font.char_width(self.fonts.height_px()) * self.fonts.width_px(),
+                            width * self.fonts.width_px(),
                             self.fonts.height_px(),
                         );
-                        pending.push((basey, basex, cell.clone(), cached));
+
+                        let offset = (basey.max(0) as usize / self.fonts.height_px() as usize)
+                            .min(bounds.height as usize - 1)
+                            * bounds.width as usize
+                            + (basex.max(0) as usize / self.fonts.width_px() as usize)
+                                .min(bounds.width as usize - 1);
+
+                        sourced.insert((basex, basey, GlyphId(info.glyph_id as _), width));
+                        self.rendered[offset].insert(
+                            (basex, basey, GlyphId(info.glyph_id as _)),
+                            (y * bounds.width as usize + info.cluster as usize, *cached),
+                        );
+                        for x_offset in 0..width as usize {
+                            self.dirty_cells.set(offset + x_offset, true);
+                        }
 
                         if cached.cached() {
                             continue;
@@ -512,20 +598,32 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                                         Transform::default()
                                     };
 
+                                    // Some fonts (Fairfax for example) return character bounds
+                                    // where the entire glyph has negative bounds. I'm sure there's
+                                    // some reason for this, but until I understand the reason, this
+                                    // makes the character actually render rather than produce a
+                                    // blank glyph.
+                                    let x_off = if path.bounds().right().is_sign_negative() {
+                                        -path.bounds().left()
+                                    } else {
+                                        0.
+                                    };
                                     path.transform(
                                         Transform::from_scale(1., -1.)
                                             .post_concat(skew)
-                                            .post_translate(0., metrics.ascender() as f32)
+                                            .post_translate(x_off, metrics.ascender() as f32)
                                             .post_scale(advance_scale, advance_scale),
                                     )
                                 }) {
                                     return (
                                         cached,
                                         Some((
-                                            metrics.ascender(),
+                                            (metrics.ascender() as f32 * advance_scale) as usize,
                                             metrics
                                                 .underline_metrics()
-                                                .map(|m| m.thickness)
+                                                .map(|m| {
+                                                    (m.thickness as f32 * advance_scale) as usize
+                                                })
                                                 .unwrap_or(1),
                                             fake_bold,
                                             path,
@@ -544,9 +642,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             let bidi = ParagraphBidiInfo::new(&self.row, None);
             let (levels, runs) = bidi.visual_runs(0..bidi.levels.len());
 
-            let mut current_font = self.fonts.last_resort();
-            let mut current_fake_bold = false;
-            let mut current_fake_italic = false;
+            let (mut current_font, mut current_fake_bold, mut current_fake_italic) = fontmap[0];
             let mut current_level = Level::ltr();
 
             for (level, range) in runs.into_iter().map(|run| (levels[run.start], run)) {
@@ -554,8 +650,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                 let cells = &self.rowmap[range];
                 for (idx, ch) in chars.char_indices() {
                     let cell_idx = cells[idx] as usize;
-                    let cell = &row[cell_idx];
-                    let (font, fake_bold, fake_italic) = self.fonts.font_for_cell(cell);
+                    let (font, fake_bold, fake_italic) = fontmap[cell_idx];
 
                     if font.id() != current_font.id()
                         || current_fake_bold != fake_bold
@@ -596,6 +691,29 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     buffer,
                 ),
             );
+
+            for (new, old) in new_sourced.into_iter().zip(sourced.iter_mut()) {
+                if new != *old {
+                    for (x, y, glyph, width) in old.difference(&new) {
+                        let cell = ((*y).max(0) as usize / self.fonts.height_px() as usize)
+                            .min(bounds.height as usize - 1)
+                            * bounds.width as usize
+                            + ((*x).max(0) as usize / self.fonts.width_px() as usize)
+                                .min(bounds.width as usize - 1);
+
+                        for offset_x in 0..*width as usize {
+                            if cell >= self.dirty_cells.len() {
+                                break;
+                            }
+
+                            self.dirty_cells.set(cell + offset_x, true);
+                        }
+
+                        self.rendered[cell].shift_remove(&(*x, *y, *glyph));
+                    }
+                    *old = new;
+                }
+            }
         }
 
         for (key, (cached, maybe_path)) in pending_cache_updates {
@@ -611,7 +729,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                 .expect("Invalid image buffer");
 
                 let mut paint = Paint::default();
-                paint.set_color_rgba8(255, 255, 255, 255);
+                paint.set_color(tiny_skia::Color::WHITE);
                 pixmap.fill_path(
                     &path,
                     &paint,
@@ -636,8 +754,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                 if key.style.contains(Modifier::UNDERLINED) {
                     for y in underline_position..underline_position + underline_thickness {
                         for x in 0..cached.width {
-                            image[y as usize * cached.width as usize + x as usize] =
-                                [255; BYTES_PER_PIXEL];
+                            image[y * cached.width as usize + x as usize] = [255; BYTES_PER_PIXEL];
                         }
                     }
                 }
@@ -668,32 +785,67 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             );
         }
 
-        if self.post_process.needs_update() || !pending.is_empty() {
+        if self.post_process.needs_update() || self.dirty_cells.any() {
+            self.bg_vertices.clear();
             self.text_vertices.clear();
             self.text_indices.clear();
 
-            let mut index_offset = 0u16;
-            for (y, x, cell, cached) in pending {
-                let reverse = cell.modifier.contains(Modifier::REVERSED);
-                let fg_color = c2c(cell.fg, self.reset_fg);
-                let bg_color = c2c(cell.bg, self.reset_bg);
+            let mut index_offset = 0;
+            for index in self.dirty_cells.iter_ones() {
+                let cell = &self.cells[index];
+                let to_render = &self.rendered[index];
 
-                let (mut fg_color, bg_color) = if reverse {
-                    (bg_color, fg_color)
+                let reverse = cell.modifier.contains(Modifier::REVERSED);
+                let bg_color = if reverse {
+                    c2c(cell.fg, self.reset_fg)
                 } else {
-                    (fg_color, bg_color)
+                    c2c(cell.bg, self.reset_bg)
                 };
 
-                if cell.modifier.contains(Modifier::DIM) {
-                    fg_color = dim(fg_color, bg_color);
-                }
-
-                let [r, g, b] = fg_color;
-                let fg_color: u32 = u32::from_be_bytes([r, g, b, 255]);
                 let [r, g, b] = bg_color;
-                let bg_color: u32 = u32::from_be_bytes([r, g, b, 255]);
+                let bg_color_u32: u32 = u32::from_be_bytes([r, g, b, 255]);
 
-                for offset_y in (0..cached.height).step_by(self.fonts.height_px() as usize) {
+                let x = (index as u32 % bounds.width as u32 * self.fonts.width_px()) as f32;
+                let y = (index as u32 / bounds.width as u32 * self.fonts.height_px()) as f32;
+
+                self.bg_vertices.push(TextBgVertexMember {
+                    vertex: [x, y],
+                    bg_color: bg_color_u32,
+                });
+                self.bg_vertices.push(TextBgVertexMember {
+                    vertex: [x + self.fonts.width_px() as f32, y],
+                    bg_color: bg_color_u32,
+                });
+                self.bg_vertices.push(TextBgVertexMember {
+                    vertex: [x, y + self.fonts.height_px() as f32],
+                    bg_color: bg_color_u32,
+                });
+                self.bg_vertices.push(TextBgVertexMember {
+                    vertex: [
+                        x + self.fonts.width_px() as f32,
+                        y + self.fonts.height_px() as f32,
+                    ],
+                    bg_color: bg_color_u32,
+                });
+
+                for ((x, y, _), (cell, cached)) in to_render.iter() {
+                    let cell = &self.cells[*cell];
+                    let reverse = cell.modifier.contains(Modifier::REVERSED);
+                    let fg_color = if reverse {
+                        c2c(cell.bg, self.reset_bg)
+                    } else {
+                        c2c(cell.fg, self.reset_fg)
+                    };
+
+                    let alpha = if cell.modifier.contains(Modifier::DIM) {
+                        127
+                    } else {
+                        255
+                    };
+
+                    let [r, g, b] = fg_color;
+                    let fg_color: u32 = u32::from_be_bytes([r, g, b, alpha]);
+
                     for offset_x in (0..cached.width).step_by(self.fonts.width_px() as usize) {
                         self.text_indices.push([
                             index_offset,     // x, y
@@ -705,30 +857,28 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         ]);
                         index_offset += 4;
 
-                        let x = x as f32 + offset_x as f32;
-                        let y = y as f32 + offset_y as f32;
+                        let x = *x as f32 + offset_x as f32;
+                        let y = *y as f32;
                         let uvx = cached.x + offset_x;
-                        let uvy = cached.y + offset_y;
+                        let uvy = cached.y;
+
                         // 0
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x, y],
                             uv: [uvx as f32, uvy as f32],
                             fg_color,
-                            bg_color,
                         });
                         // 1
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x + self.fonts.width_px() as f32, y],
                             uv: [uvx as f32 + self.fonts.width_px() as f32, uvy as f32],
                             fg_color,
-                            bg_color,
                         });
                         // 2
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x, y + self.fonts.height_px() as f32],
                             uv: [uvx as f32, uvy as f32 + self.fonts.height_px() as f32],
                             fg_color,
-                            bg_color,
                         });
                         // 3
                         self.text_vertices.push(TextVertexMember {
@@ -741,7 +891,6 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                                 uvy as f32 + self.fonts.height_px() as f32,
                             ],
                             fg_color,
-                            bg_color,
                         });
                     }
                 }
@@ -1134,6 +1283,159 @@ mod tests {
             );
         }
 
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn overlap() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("H̴̢͕̠͖͇̻͓̙̞͔͕͓̰͋͛͂̃̌͂͆͜͠"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/overlap_initial.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+        surface.buffer.as_ref().unwrap().unmap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("H"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/overlap_post.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn overlap_colors() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("H̴̢͕̠͖͇̻͓̙̞͔͕͓̰͋͛͂̃̌͂͆͜͠".blue().on_red().underlined()), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/overlap_colors.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
         surface.buffer.as_ref().unwrap().unmap();
     }
 }

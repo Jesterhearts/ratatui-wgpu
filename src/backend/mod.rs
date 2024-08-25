@@ -290,6 +290,13 @@ impl RenderSurface<'static> for HeadlessSurface {
     }
 }
 
+#[repr(C)]
+#[derive(bytemuck::Pod, bytemuck::Zeroable, Debug, Clone, Copy)]
+struct TextBgVertexMember {
+    vertex: [f32; 2],
+    bg_color: u32,
+}
+
 // Vertex + UVCoord + Color
 #[repr(C)]
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Debug, Clone, Copy)]
@@ -297,10 +304,14 @@ struct TextVertexMember {
     vertex: [f32; 2],
     uv: [f32; 2],
     fg_color: u32,
-    bg_color: u32,
 }
 
-struct TextCachePipeline {
+struct TextCacheBgPipeline {
+    pipeline: RenderPipeline,
+    fs_uniforms: BindGroup,
+}
+
+struct TextCacheFgPipeline {
     pipeline: RenderPipeline,
     fs_uniforms: BindGroup,
     atlas_bindings: BindGroup,

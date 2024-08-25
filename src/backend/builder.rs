@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use bitvec::vec::BitVec;
 use ratatui::style::Color;
 use rustybuzz::UnicodeBuffer;
 use wgpu::{
@@ -23,6 +24,7 @@ use wgpu::{
     BindGroupLayoutEntry,
     BindingResource,
     BindingType,
+    BlendState,
     Buffer,
     BufferBindingType,
     BufferDescriptor,
@@ -71,7 +73,9 @@ use crate::{
         wgpu_backend::WgpuBackend,
         PostProcessor,
         RenderSurface,
-        TextCachePipeline,
+        TextBgVertexMember,
+        TextCacheBgPipeline,
+        TextCacheFgPipeline,
         TextVertexMember,
         Viewport,
     },
@@ -405,7 +409,9 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             usage: BufferUsages::UNIFORM,
         });
 
-        let text_compositor = build_text_compositor(
+        let text_bg_compositor = build_text_bg_compositor(&device, &text_screen_size_buffer);
+
+        let text_fg_compositor = build_text_fg_compositor(
             &device,
             &text_screen_size_buffer,
             &atlas_size_buffer,
@@ -428,6 +434,9 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             ),
             cells: vec![],
             dirty_rows: vec![],
+            dirty_cells: BitVec::new(),
+            rendered: vec![],
+            sourced: vec![],
             cursor: (0, 0),
             surface,
             _surface: PhantomData,
@@ -441,10 +450,12 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             viewport: self.viewport,
             cached: Atlas::new(&self.fonts, CACHE_WIDTH, CACHE_HEIGHT),
             text_cache,
+            bg_vertices: vec![],
             text_indices: vec![],
             text_vertices: vec![],
             text_screen_size_buffer,
-            text_compositor,
+            text_bg_compositor,
+            text_fg_compositor,
             wgpu_state,
             fonts: self.fonts,
             reset_fg: self.reset_fg,
@@ -453,14 +464,85 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
     }
 }
 
-fn build_text_compositor(
+fn build_text_bg_compositor(device: &Device, screen_size: &Buffer) -> TextCacheBgPipeline {
+    let shader = device.create_shader_module(include_wgsl!("shaders/composite_bg.wgsl"));
+
+    let vertex_shader_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("Text Bg Compositor Uniforms Binding Layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: Some(NonZeroU64::new(size_of::<[f32; 4]>() as u64).unwrap()),
+            },
+            count: None,
+        }],
+    });
+
+    let fs_uniforms = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("Text Bg Compositor Uniforms Binding"),
+        layout: &vertex_shader_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: screen_size.as_entire_binding(),
+        }],
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("Text Bg Compositor Layout"),
+        bind_group_layouts: &[&vertex_shader_layout],
+        push_constant_ranges: &[],
+    });
+
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("Text Bg Compositor Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: "vs_main",
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[VertexBufferLayout {
+                array_stride: size_of::<TextBgVertexMember>() as u64,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &vertex_attr_array![0 => Float32x2, 1 => Uint32],
+            }],
+        },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: "fs_main",
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview: None,
+        cache: None,
+    });
+
+    TextCacheBgPipeline {
+        pipeline,
+        fs_uniforms,
+    }
+}
+
+fn build_text_fg_compositor(
     device: &Device,
     screen_size: &Buffer,
     atlas_size: &Buffer,
     cache_view: &TextureView,
     sampler: &Sampler,
-) -> TextCachePipeline {
-    let shader = device.create_shader_module(include_wgsl!("shaders/composite.wgsl"));
+) -> TextCacheFgPipeline {
+    let shader = device.create_shader_module(include_wgsl!("shaders/composite_fg.wgsl"));
 
     let vertex_shader_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("Text Compositor Uniforms Binding Layout"),
@@ -552,7 +634,7 @@ fn build_text_compositor(
             buffers: &[VertexBufferLayout {
                 array_stride: size_of::<TextVertexMember>() as u64,
                 step_mode: VertexStepMode::Vertex,
-                attributes: &vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32, 3 => Uint32],
+                attributes: &vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32],
             }],
         },
         primitive: PrimitiveState {
@@ -567,7 +649,7 @@ fn build_text_compositor(
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
                 format: TextureFormat::Rgba8Unorm,
-                blend: None,
+                blend: Some(BlendState::ALPHA_BLENDING),
                 write_mask: ColorWrites::ALL,
             })],
         }),
@@ -575,7 +657,7 @@ fn build_text_compositor(
         cache: None,
     });
 
-    TextCachePipeline {
+    TextCacheFgPipeline {
         pipeline,
         fs_uniforms,
         atlas_bindings,
