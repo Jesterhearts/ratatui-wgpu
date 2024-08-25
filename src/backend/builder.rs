@@ -9,6 +9,10 @@ use std::{
 use bitvec::vec::BitVec;
 use ratatui::style::Color;
 use rustybuzz::UnicodeBuffer;
+use web_time::{
+    Duration,
+    Instant,
+};
 use wgpu::{
     include_wgsl,
     util::{
@@ -118,6 +122,8 @@ pub struct Builder<'a, P: PostProcessor = DefaultPostProcessor> {
     viewport: Viewport,
     reset_fg: Rgb,
     reset_bg: Rgb,
+    fast_blink: Duration,
+    slow_blink: Duration,
 }
 
 impl<'a, P: PostProcessor> Builder<'a, P>
@@ -138,6 +144,8 @@ where
             viewport: Viewport::Full,
             reset_fg: BLACK,
             reset_bg: WHITE,
+            fast_blink: Duration::from_millis(200),
+            slow_blink: Duration::from_millis(1000),
         }
     }
 }
@@ -157,6 +165,8 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             viewport: Viewport::Full,
             reset_fg: BLACK,
             reset_bg: WHITE,
+            fast_blink: Duration::from_millis(200),
+            slow_blink: Duration::from_millis(1000),
         }
     }
 
@@ -259,6 +269,26 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
     #[must_use]
     pub fn with_bg_color(mut self, bg: Color) -> Self {
         self.reset_bg = c2c(bg, self.reset_bg);
+        self
+    }
+
+    /// Use the specified interval in milliseconds as the rapid blink speed.
+    /// Note that this library doesn't spin off rendering into a separate thread
+    /// for you. If you want text to blink, you must ensure that a call to
+    /// `flush` is made frequently enough. Defaults to 200ms.
+    #[must_use]
+    pub fn with_rapid_blink_millis(mut self, millis: u64) -> Self {
+        self.fast_blink = Duration::from_millis(millis);
+        self
+    }
+
+    /// Use the specified interval in milliseconds as the slow blink speed.
+    /// Note that this library doesn't spin off rendering into a separate thread
+    /// for you. If you want text to blink, you must ensure that a call to
+    /// `flush` is made frequently enough. Defaults to 1000ms.
+    #[must_use]
+    pub fn with_slow_blink_millis(mut self, millis: u64) -> Self {
+        self.slow_blink = Duration::from_millis(millis);
         self
     }
 }
@@ -437,6 +467,8 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             dirty_cells: BitVec::new(),
             rendered: vec![],
             sourced: vec![],
+            fast_blinking: BitVec::new(),
+            slow_blinking: BitVec::new(),
             cursor: (0, 0),
             surface,
             _surface: PhantomData,
@@ -460,6 +492,12 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             fonts: self.fonts,
             reset_fg: self.reset_fg,
             reset_bg: self.reset_bg,
+            fast_duration: self.fast_blink,
+            last_fast_toggle: Instant::now(),
+            show_fast: true,
+            slow_duration: self.slow_blink,
+            last_slow_toggle: Instant::now(),
+            show_slow: true,
         })
     }
 }

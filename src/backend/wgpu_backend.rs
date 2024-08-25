@@ -42,6 +42,10 @@ use unicode_bidi::{
     ParagraphBidiInfo,
 };
 use unicode_width::UnicodeWidthStr;
+use web_time::{
+    Duration,
+    Instant,
+};
 use wgpu::{
     util::{
         BufferInitDescriptor,
@@ -132,6 +136,8 @@ pub struct WgpuBackend<
     pub(super) dirty_cells: BitVec,
     pub(super) rendered: Vec<Rendered>,
     pub(super) sourced: Vec<Sourced>,
+    pub(super) fast_blinking: BitVec,
+    pub(super) slow_blinking: BitVec,
 
     pub(super) cursor: (u16, u16),
 
@@ -162,6 +168,13 @@ pub struct WgpuBackend<
     pub(super) fonts: Fonts<'f>,
     pub(super) reset_fg: Rgb,
     pub(super) reset_bg: Rgb,
+
+    pub(super) fast_duration: Duration,
+    pub(super) last_fast_toggle: Instant,
+    pub(super) show_fast: bool,
+    pub(super) slow_duration: Duration,
+    pub(super) last_slow_toggle: Instant,
+    pub(super) show_slow: bool,
 }
 
 impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
@@ -214,9 +227,10 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
             self.cells.clear();
             self.rendered.clear();
             self.sourced.clear();
+            self.fast_blinking.clear();
+            self.slow_blinking.clear();
+            self.dirty_rows.clear();
         }
-
-        self.dirty_rows.clear();
 
         self.wgpu_state = build_wgpu_state(
             &self.device,
@@ -373,36 +387,27 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             bounds.height as usize * bounds.width as usize,
             Rendered::default,
         );
+        self.fast_blinking
+            .resize(bounds.height as usize * bounds.width as usize, false);
+        self.slow_blinking
+            .resize(bounds.height as usize * bounds.width as usize, false);
         self.dirty_rows.resize(bounds.height as usize, true);
 
         for (x, y, cell) in content {
-            self.cells[y as usize * bounds.width as usize + x as usize] = cell.clone();
+            let index = y as usize * bounds.width as usize + x as usize;
+
+            self.fast_blinking
+                .set(index, cell.modifier.contains(Modifier::RAPID_BLINK));
+            self.slow_blinking
+                .set(index, cell.modifier.contains(Modifier::SLOW_BLINK));
+
+            self.cells[index] = cell.clone();
+
+            let width = cell.symbol().width().max(1);
+            let start = (index + 1).min(self.cells.len());
+            let end = (index + width).min(self.cells.len());
+            self.cells[start..end].fill(NULL_CELL);
             self.dirty_rows[y as usize] = true;
-        }
-
-        for (row, dirty) in self
-            .cells
-            .chunks_mut(bounds.width as usize)
-            .zip(self.dirty_rows.iter_mut())
-        {
-            let mut idx = 0;
-            loop {
-                if idx >= row.len() {
-                    break;
-                }
-
-                let bg = row[idx].bg;
-                let next = idx + 1 + row[idx].symbol().width().saturating_sub(1);
-                for dest in row[idx + 1..next].iter_mut() {
-                    if *dest != NULL_CELL {
-                        *dest = NULL_CELL;
-                        dest.bg = bg;
-                        *dirty = true;
-                    }
-                }
-
-                idx = next;
-            }
         }
 
         Ok(())
@@ -473,6 +478,26 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
         let bounds = self.size()?;
         self.dirty_cells.clear();
         self.dirty_cells.resize(self.cells.len(), false);
+
+        let fast_toggle_dirty = self.last_fast_toggle.elapsed() >= self.fast_duration;
+        if fast_toggle_dirty {
+            self.last_fast_toggle = Instant::now();
+            self.show_fast = !self.show_fast;
+
+            for index in self.fast_blinking.iter_ones() {
+                self.dirty_cells.set(index, true);
+            }
+        }
+
+        let slow_toggle_dirty = self.last_slow_toggle.elapsed() >= self.slow_duration;
+        if slow_toggle_dirty {
+            self.last_slow_toggle = Instant::now();
+            self.show_slow = !self.show_slow;
+
+            for index in self.slow_blinking.iter_ones() {
+                self.dirty_cells.set(index, true);
+            }
+        }
 
         let mut pending_cache_updates = HashMap::<_, _, RandomState>::default();
 
@@ -837,7 +862,12 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         c2c(cell.fg, self.reset_fg)
                     };
 
-                    let alpha = if cell.modifier.contains(Modifier::DIM) {
+                    let alpha = if cell.modifier.contains(Modifier::HIDDEN)
+                        | (cell.modifier.contains(Modifier::RAPID_BLINK) & !self.show_fast)
+                        | (cell.modifier.contains(Modifier::SLOW_BLINK) & !self.show_slow)
+                    {
+                        0
+                    } else if cell.modifier.contains(Modifier::DIM) {
                         127
                     } else {
                         255

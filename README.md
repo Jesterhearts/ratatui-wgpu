@@ -39,12 +39,16 @@ The crate has the following goals in order of descending priority.
      library.
 
 ## Known Limitations
-1. No support for text blinking.
-   - I'm open to adding this, but I have no use for it. This complicates the web story slightly,
-     since browsers don't support [`std::time`](https://doc.rust-lang.org/std/time/index.html).
-2. No cursor rendering.
+1. No cursor rendering.
     - The location of the cursor is tracked, and operations using it should behave as expected, but
       the cursor is not rendered to the screen.
+2. Attempting to render more unique (utf8 character * BOLD|ITALIC|UNDERLINED) characters than can
+   fit in the cache in a single draw call will cause incorrect rendering. This is ~3750 characters
+   at the default font size with most fonts. If you need more than this, file a bug and I'll do the
+   work to make rendering handle an unbounded number of unique characters.
+
+   To put that in perspective, rendering every printable ascii character in every combination of
+   styles would take (95 * 8) 760 cache entries or ~20% of the cache.
 
 ## Dependencies
 This crate attempts to be reasonable with its usage of external dependencies, although it is
@@ -78,6 +82,7 @@ definitely not minimal.
 11. unicode-width: I need to access the width of characters to figure out row layout and
     implementing this myself seems silly. This is already pulled in by ratatui, so it doesn't really
     increase the size of the dependency tree.
+12. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
 
 [Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=flat-square
 [Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=flat-square
