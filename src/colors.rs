@@ -1,6 +1,6 @@
 pub(crate) type Rgb = [u8; 3];
 
-/// https://www.w3.org/TR/SVG11/types.html#ColorKeywords
+/// <https://www.w3.org/TR/SVG11/types.html#ColorKeywords>
 pub(crate) mod named {
     use crate::colors::Rgb;
 
