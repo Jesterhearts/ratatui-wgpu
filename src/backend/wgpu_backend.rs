@@ -228,8 +228,12 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
             self.sourced.clear();
             self.fast_blinking.clear();
             self.slow_blinking.clear();
-            self.dirty_rows.clear();
         }
+
+        // This always needs to be cleared because the surface is cleared when it is
+        // resized. If we don't re-render the rows, we end up with a blank surface when
+        // the resize is less than a character dimension.
+        self.dirty_rows.clear();
 
         self.wgpu_state = build_wgpu_state(
             &self.device,
