@@ -55,9 +55,9 @@ This crate attempts to be reasonable with its usage of external dependencies, al
 definitely not minimal.
 1. ratatui & wgpu: This crate's core purpose is to create a backend for the former using the latter,
    so these are both necessary.
-2. ahash: Inserting into map & set tracking structures during the core rendering loop takes up a
-   significant portion of the render time. Using ahash improves overall performance by ~3% for the
-   colors example in my profiling (12% of execution time vs 15%).
+2. ahash (optional, default): Inserting into map & set tracking structures during the core rendering
+   loop takes up a significant portion of the render time. Using ahash improves overall performance
+   by ~3% for the colors example in my profiling (12% of execution time vs 15%).
 3. bitvec: During rendering, I need to efficiently track dirty cells which need their
    background/contents repainted. Bitvec is an efficient structure for tracking which cells are
    dirty.

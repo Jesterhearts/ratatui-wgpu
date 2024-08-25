@@ -3,8 +3,9 @@ use std::{
     hash::Hash,
 };
 
-use ahash::RandomState;
 use indexmap::IndexMap;
+
+use crate::RandomState;
 
 #[derive(Debug)]
 struct Entry<Value> {

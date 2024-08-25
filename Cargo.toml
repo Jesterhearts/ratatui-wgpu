@@ -9,7 +9,9 @@ description  = "A wgpu based backend for ratatui."
 keywords     = [ "wasm", "tui", "rendering" ]
 
 [features]
-web = [ "wgpu/webgl" ]
+default = [ "ahash" ]
+ahash   = [ "dep:ahash" ]
+web     = [ "wgpu/webgl" ]
 
 [[example]]
 name              = "hello_web"
@@ -22,7 +24,7 @@ path              = "examples/web/hello_webworker.rs"
 required-features = [ "web" ]
 
 [dependencies]
-ahash         = { version = "0.8.11", default-features = false, features = [ "std", "compile-time-rng" ] }
+ahash         = { version = "0.8.11", default-features = false, features = [ "std", "compile-time-rng" ], optional = true }
 bitvec        = { version = "1.0.1", default-features = false, features = [ "std" ] }
 bytemuck      = { version = "1.17.0", features = [ "derive" ] }
 indexmap      = { version = "2.4.0", default-features = false, features = [ "std" ] }

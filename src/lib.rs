@@ -34,6 +34,11 @@ pub enum Error {
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
+#[cfg(feature = "ahash")]
+type RandomState = ahash::RandomState;
+#[cfg(not(feature = "ahash"))]
+type RandomState = std::hash::RandomState;
+
 pub use backend::{
     builder::Builder,
     wgpu_backend::WgpuBackend,

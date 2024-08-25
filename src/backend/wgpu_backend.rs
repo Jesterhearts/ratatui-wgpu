@@ -8,7 +8,6 @@ use std::{
     num::NonZeroU64,
 };
 
-use ahash::RandomState;
 use bitvec::vec::BitVec;
 use indexmap::IndexMap;
 use ratatui::{
@@ -102,6 +101,7 @@ use crate::{
         },
         Outline,
     },
+    RandomState,
 };
 
 const NULL_CELL: Cell = Cell::new("");
