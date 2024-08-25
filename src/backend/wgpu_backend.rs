@@ -120,7 +120,6 @@ type Sourced = HashSet<(i32, i32, GlyphId, u32), RandomState>;
 ///
 /// Limitations:
 /// - The cursor is tracked but not rendered.
-/// - No support for blinking text.
 /// - No builtin accessibilty, although [`WgpuBackend::get_text`] is provided to
 ///   access the screen's contents.
 pub struct WgpuBackend<
