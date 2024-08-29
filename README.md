@@ -6,6 +6,8 @@
 
 A wgpu based rendering backend for ratatui.
 
+https://github.com/user-attachments/assets/eb99fd5c-7f07-4a2f-ab11-3e7f6557c6f7
+
 This started out as a custom rendering backend for a game I'm developing, and I thought I'd make it
 available to the broader community as an alternative rendering target for TUI applications. One of
 its primary goals is to support serving TUI applications on the web.
