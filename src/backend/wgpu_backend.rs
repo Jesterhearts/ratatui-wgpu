@@ -878,8 +878,21 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         255
                     };
 
+                    let underline_color;
+                    #[cfg(feature = "underline-color")]
+                    {
+                        underline_color = c2c(cell.underline_color, fg_color);
+                    }
+                    #[cfg(not(feature = "underline-color"))]
+                    {
+                        underline_color = fg_color
+                    }
+
                     let [r, g, b] = fg_color;
                     let fg_color: u32 = u32::from_be_bytes([r, g, b, alpha]);
+
+                    let [r, g, b] = underline_color;
+                    let underline_color = u32::from_be_bytes([r, g, b, alpha]);
 
                     for offset_x in (0..cached.width).step_by(self.fonts.min_width_px() as usize) {
                         self.text_indices.push([
@@ -906,7 +919,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                             uv: [uvx as f32, uvy as f32],
                             fg_color,
                             underline_pos,
-                            underline_color: fg_color,
+                            underline_color,
                         });
                         // 1
                         self.text_vertices.push(TextVertexMember {
@@ -914,7 +927,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                             uv: [uvx as f32 + self.fonts.min_width_px() as f32, uvy as f32],
                             fg_color,
                             underline_pos,
-                            underline_color: fg_color,
+                            underline_color,
                         });
                         // 2
                         self.text_vertices.push(TextVertexMember {
@@ -922,7 +935,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                             uv: [uvx as f32, uvy as f32 + self.fonts.height_px() as f32],
                             fg_color,
                             underline_pos,
-                            underline_color: fg_color,
+                            underline_color,
                         });
                         // 3
                         self.text_vertices.push(TextVertexMember {
@@ -936,7 +949,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                             ],
                             fg_color,
                             underline_pos,
-                            underline_color: fg_color,
+                            underline_color,
                         });
                     }
                 }

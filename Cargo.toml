@@ -9,9 +9,10 @@ description  = "A wgpu based backend for ratatui."
 keywords     = [ "wasm", "tui", "rendering" ]
 
 [features]
-default = [ "ahash" ]
-ahash   = [ "dep:ahash" ]
-web     = [ "wgpu/webgl" ]
+default         = [ "ahash", "underline-color" ]
+ahash           = [ "dep:ahash" ]
+underline-color = [ "ratatui/underline-color" ]
+web             = [ "wgpu/webgl" ]
 
 [[example]]
 name              = "hello_web"
