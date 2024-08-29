@@ -104,7 +104,7 @@ impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
             })
             .then_scale(self.scale, -self.scale)
             .then(&self.skew)
-            .then_translate((self.x_offset, self.y_offset * self.scale).into())
+            .then_translate((self.x_offset, self.y_offset).into())
     }
 }
 
@@ -243,8 +243,7 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
                 CompositeMode::Color => raqote::BlendMode::Color,
                 CompositeMode::Luminosity => raqote::BlendMode::Luminosity,
             },
-            alpha: 1.0,
-            antialias: raqote::AntialiasMode::Gray,
+            ..Default::default()
         };
 
         self.target.fill(&self.outline, &paint, &draw_options);

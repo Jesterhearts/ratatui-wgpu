@@ -192,6 +192,18 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
         self
     }
 
+    /// Use the specified list of fonts for rendering. You may call this
+    /// multiple times to extend the list of fallback fonts. Note that this will
+    /// automatically organize fonts by relative width in order to optimize
+    /// fallback rendering quality. The ordering of already provided fonts will
+    /// remain unchanged.
+    ///
+    /// See also [`Fonts::add_fonts`].
+    pub fn with_fonts<I: IntoIterator<Item = Font<'a>>>(mut self, fonts: I) -> Self {
+        self.fonts.add_fonts(fonts);
+        self
+    }
+
     /// Use the specified list of regular fonts for rendering. You may call this
     /// multiple times to extend the list of fallback fonts.
     ///

@@ -4,6 +4,7 @@ use std::{
 };
 
 use chrono::Local;
+use fontdb::Database;
 use ratatui::{
     prelude::*,
     widgets::*,
@@ -26,6 +27,7 @@ use winit::{
 pub struct App {
     window: Option<Arc<Window>>,
     backend: Option<Terminal<WgpuBackend<'static, 'static>>>,
+    fontdb: Database,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -36,6 +38,7 @@ fn main() -> anyhow::Result<()> {
     let mut app = App {
         window: None,
         backend: None,
+        fontdb: Database::new(),
     };
     event_loop.run_app(&mut app).unwrap();
 
@@ -52,6 +55,19 @@ impl ApplicationHandler for App {
 
         let size = self.window.as_ref().unwrap().inner_size();
 
+        self.fontdb.load_system_fonts();
+        let fonts = self
+            .fontdb
+            .faces()
+            .filter_map(|info| {
+                if (info.monospaced || info.post_script_name.contains("Noto")) && info.index == 0 {
+                    Some(info.id)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
         self.backend = Some(
             Terminal::new(
                 futures_lite::future::block_on(
@@ -62,6 +78,13 @@ impl ApplicationHandler for App {
                         )))
                         .unwrap(),
                     )
+                    .with_fonts(fonts.into_iter().filter_map(|id| {
+                        // Leaking here is fine for this short program and solves a lot of lifetime
+                        // issues. Obviously don't do this in real code.
+                        self.fontdb
+                            .with_face_data(id, |d, _| Font::new(d.to_vec().leak()))
+                            .flatten()
+                    }))
                     .with_dimensions(
                         NonZeroU32::new(size.width).unwrap(),
                         NonZeroU32::new(size.height).unwrap(),
@@ -99,7 +122,7 @@ impl ApplicationHandler for App {
             .draw(|f| {
                 f.render_widget(
                     Paragraph::new(Line::from(vec![
-                        "Hello World!".bold().italic(),
+                        "Hello World! 🦀🚀".bold().italic(),
                         format!(" It is {}", Local::now().format("%H:%M:%S.%f")).dim(),
                     ]))
                     .block(Block::bordered()),

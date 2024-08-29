@@ -48,7 +48,10 @@ use unicode_properties::{
     UnicodeEmoji,
     UnicodeGeneralCategory,
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{
+    UnicodeWidthChar,
+    UnicodeWidthStr,
+};
 use web_time::{
     Duration,
     Instant,
@@ -578,12 +581,11 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 
                     let basey = y as i32 * self.fonts.height_px() as i32
                         + (position.y_offset as f32 * advance_scale) as i32;
-                    let advance = (position.x_advance as f32 * advance_scale) as i32;
-                    let advance = (advance / self.fonts.min_width_px() as i32)
-                        .clamp(-(max_width as i32), max_width as i32)
-                        * self.fonts.min_width_px() as i32;
+                    let mut advance = (position.x_advance as f32 * advance_scale) as i32;
                     if advance != 0 {
                         x += next_advance;
+                        advance =
+                            max_width as i32 * advance.signum() * self.fonts.min_width_px() as i32;
                         next_advance = advance;
                     }
                     let basex = x + (position.x_offset as f32 * advance_scale) as i32;
@@ -603,13 +605,18 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         font: font.id(),
                     };
 
-                    let width = ((metrics
+                    let ch = self.row[info.cluster as usize..].chars().next().unwrap();
+                    let width = (metrics
                         .glyph_hor_advance(GlyphId(info.glyph_id as _))
                         .unwrap_or_default() as f32
-                        * advance_scale) as u32)
-                        .max(font.char_width(self.fonts.height_px()));
-                    let rendered_chars_wide = width / self.fonts.min_width_px();
-                    let chars_wide = rendered_chars_wide.min(max_width as u32);
+                        * advance_scale) as u32;
+                    let chars_wide = ch.width().unwrap_or(max_width) as u32;
+                    let chars_wide = if chars_wide == 0 { 1 } else { chars_wide };
+                    let width = if width == 0 {
+                        chars_wide * self.fonts.min_width_px()
+                    } else {
+                        width
+                    };
 
                     let cached = self.cached.get(
                         &key,
@@ -655,7 +662,6 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     }
 
                     pending_cache_updates.entry(key).or_insert_with(|| {
-                        let ch = self.row[info.cluster as usize..].chars().next().unwrap();
                         let is_emoji = ch.is_emoji_char()
                             && !matches!(ch.general_category_group(), GeneralCategoryGroup::Number);
 
@@ -666,9 +672,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                             fake_italic & !is_emoji,
                             fake_bold & !is_emoji,
                             advance_scale,
-                            self.fonts.min_width_px(),
-                            chars_wide,
-                            rendered_chars_wide,
+                            width,
                         );
                         (rect, image, is_emoji)
                     });
@@ -989,7 +993,6 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rasterize_glyph(
     cached: Entry,
     metrics: &rustybuzz::Face,
@@ -997,12 +1000,12 @@ fn rasterize_glyph(
     fake_italic: bool,
     fake_bold: bool,
     advance_scale: f32,
-    min_width: u32,
-    chars_wide: u32,
-    rendered_chars_wide: u32,
+    actual_width: u32,
 ) -> (CacheRect, Vec<u32>) {
-    let computed_offset = (rendered_chars_wide.saturating_sub(chars_wide) * min_width) as f32;
-    let computed_offset = -computed_offset / 2.0;
+    let scale = cached.width as f32 / actual_width as f32;
+    let computed_offset_x = -(cached.width as f32 * (1.0 - scale));
+    let computed_offset_y = cached.height as f32 * (1.0 - scale);
+    let scale = scale * advance_scale * 2.0;
 
     let skew = if fake_italic {
         Transform::new(
@@ -1010,25 +1013,28 @@ fn rasterize_glyph(
             /* skew x */ 0.0,
             /* skew y */ -0.25,
             /* scale y */ 1.0,
-            /* translate x */ 0.25 * cached.width as f32,
+            /* translate x */ -0.25 * cached.width as f32,
             /* translate y */ 0.0,
         )
     } else {
         Transform::default()
     };
 
-    let mut image = vec![0u32; cached.width as usize * cached.height as usize];
-    let mut target =
-        DrawTarget::from_backing(cached.width as i32, cached.height as i32, &mut image[..]);
+    let mut image = vec![0u32; cached.width as usize * 2 * cached.height as usize * 2];
+    let mut target = DrawTarget::from_backing(
+        cached.width as i32 * 2,
+        cached.height as i32 * 2,
+        &mut image[..],
+    );
 
     let mut painter = Painter::new(
         metrics,
         &mut target,
         skew,
         fake_bold,
-        advance_scale,
-        metrics.ascender() as f32,
-        computed_offset,
+        scale,
+        metrics.ascender() as f32 * scale + computed_offset_y,
+        computed_offset_x,
     );
     if metrics
         .paint_color_glyph(
@@ -1039,11 +1045,27 @@ fn rasterize_glyph(
         )
         .is_some()
     {
-        for argb in image.iter_mut() {
+        let mut final_image = DrawTarget::new(cached.width as i32, cached.height as i32);
+        final_image.draw_image_with_size_at(
+            cached.width as f32,
+            cached.height as f32,
+            0.,
+            0.,
+            &raqote::Image {
+                width: cached.width as i32 * 2,
+                height: cached.height as i32 * 2,
+                data: &image,
+            },
+            &DrawOptions::default(),
+        );
+
+        let mut final_image = final_image.into_vec();
+        for argb in final_image.iter_mut() {
             let [a, r, g, b] = argb.to_be_bytes();
             *argb = u32::from_le_bytes([r, g, b, a]);
         }
-        return (*cached, image);
+
+        return (*cached, final_image);
     }
 
     let mut render = Outline::default();
@@ -1055,22 +1077,19 @@ fn rasterize_glyph(
         } else {
             0.
         };
-        let x_off = x_off + computed_offset;
+        let x_off = x_off * scale + computed_offset_x;
+        let y_off = metrics.ascender() as f32 * scale + computed_offset_y;
 
-        let path = path.transform(
-            &Transform::scale(1., -1.)
-                .then_translate((x_off, metrics.ascender() as f32).into())
-                .then_scale(advance_scale, advance_scale)
-                .then(&skew),
+        target.set_transform(
+            &Transform::scale(scale, -scale)
+                .then(&skew)
+                .then_translate((x_off, y_off).into()),
         );
 
         target.fill(
             &path,
             &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
-            &DrawOptions {
-                antialias: raqote::AntialiasMode::Gray,
-                ..Default::default()
-            },
+            &DrawOptions::default(),
         );
 
         if fake_bold {
@@ -1085,10 +1104,27 @@ fn rasterize_glyph(
             );
         }
 
-        return (*cached, image);
+        let mut final_image = DrawTarget::new(cached.width as i32, cached.height as i32);
+        final_image.draw_image_with_size_at(
+            cached.width as f32,
+            cached.height as f32,
+            0.,
+            0.,
+            &raqote::Image {
+                width: cached.width as i32 * 2,
+                height: cached.height as i32 * 2,
+                data: &image,
+            },
+            &DrawOptions::default(),
+        );
+
+        return (*cached, final_image.into_vec());
     }
 
-    (*cached, image)
+    (
+        *cached,
+        vec![0u32; cached.width as usize * cached.height as usize],
+    )
 }
 
 #[cfg(test)]
