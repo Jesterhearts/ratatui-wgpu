@@ -24,19 +24,20 @@ path              = "examples/web/hello_webworker.rs"
 required-features = [ "web" ]
 
 [dependencies]
-ahash         = { version = "0.8.11", default-features = false, features = [ "std", "compile-time-rng" ], optional = true }
-bitvec        = { version = "1.0.1", default-features = false, features = [ "std" ] }
-bytemuck      = { version = "1.17.0", features = [ "derive" ] }
-indexmap      = { version = "2.4.0", default-features = false, features = [ "std" ] }
-log           = { version = "0.4.22", default-features = false }
-ratatui       = { version = "0.28.0", default-features = false }
-rustybuzz     = "0.18.0"
-thiserror     = "1.0.63"
-tiny-skia     = { version = "0.11.4", default-features = false, features = [ "simd", "std" ] }
-unicode-bidi  = "0.3.15"
-unicode-width = "0.1.13"
-web-time      = "1.1.0"
-wgpu          = "22.1.0"
+ahash              = { version = "0.8.11", default-features = false, features = [ "std", "compile-time-rng" ], optional = true }
+bitvec             = { version = "1.0.1", default-features = false, features = [ "std" ] }
+bytemuck           = { version = "1.17.0", features = [ "derive" ] }
+indexmap           = { version = "2.4.0", default-features = false, features = [ "std" ] }
+log                = { version = "0.4.22", default-features = false }
+raqote             = { version = "0.8.4", default-features = false }
+ratatui            = { version = "0.28.0", default-features = false }
+rustybuzz          = "0.18.0"
+thiserror          = "1.0.63"
+unicode-bidi       = "0.3.15"
+unicode-properties = "0.1.2"
+unicode-width      = "0.1.13"
+web-time           = "1.1.0"
+wgpu               = "22.1.0"
 
 [dev-dependencies]
 anyhow                   = "1.0.86"

@@ -58,7 +58,7 @@ pub(crate) struct Atlas {
 
 impl Atlas {
     pub(crate) fn new(fonts: &Fonts, width: u32, height: u32) -> Self {
-        let entry_width = fonts.width_px() * 2;
+        let entry_width = fonts.min_width_px() * 2;
         let entry_height = fonts.height_px();
         let max_entries = (width / entry_width) * (height / entry_height);
         debug!("Atlas with WxH {entry_width}x{entry_height} can hold {max_entries}");
@@ -76,7 +76,7 @@ impl Atlas {
 
     pub(crate) fn match_fonts(&mut self, fonts: &Fonts) {
         self.clear();
-        self.entry_width = fonts.width_px() * 2;
+        self.entry_width = fonts.min_width_px() * 2;
         self.entry_height = fonts.height_px();
         self.max_entries = (self.width / self.entry_width) * (self.height / self.entry_height);
 
@@ -110,10 +110,11 @@ impl Atlas {
             let rect = if self.next_entry == self.max_entries {
                 self.lru.pop().expect("Atlas has zero max entries!").1
             } else {
-                self.slot_to_rect(self.next_entry, width)
+                let entry = self.next_entry;
+                self.next_entry += 1;
+                self.slot_to_rect(entry, width)
             };
 
-            self.next_entry += 1;
             self.lru.insert(*key, rect);
             Entry::Uncached(rect)
         })

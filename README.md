@@ -42,13 +42,13 @@ The crate has the following goals in order of descending priority.
 1. No cursor rendering.
     - The location of the cursor is tracked, and operations using it should behave as expected, but
       the cursor is not rendered to the screen.
-2. Attempting to render more unique (utf8 character * BOLD|ITALIC|UNDERLINED) characters than can
+2. Attempting to render more unique (utf8 character * BOLD|ITALIC) characters than can
    fit in the cache in a single draw call will cause incorrect rendering. This is ~3750 characters
    at the default font size with most fonts. If you need more than this, file a bug and I'll do the
    work to make rendering handle an unbounded number of unique characters.
 
    To put that in perspective, rendering every printable ascii character in every combination of
-   styles would take (95 * 8) 760 cache entries or ~20% of the cache.
+   styles would take (95 * 4) 380 cache entries or ~10% of the cache.
 
 ## Dependencies
 This crate attempts to be reasonable with its usage of external dependencies, although it is
@@ -69,21 +69,23 @@ definitely not minimal.
    bubbling entries down the heap.
 6. log: Integrating with standard logging infrastructure is very useful. This might be replaced with
    tracing, but I'm not going to go without some sort of logging.
-7. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
+7. raqote: I don't want to implement path stroking & filling by hand and this library supports all
+   the gradient modes required to render from a font's COLR table.
+8. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
    external dependency on some other library to do this for me. Rustybuzz happens to be (imo) the
    current best choice.
-8. thiserror: I don't want to write the Error trait by hand. I might consider removing this if doing
+9. thiserror: I don't want to write the Error trait by hand. I might consider removing this if doing
    so doesn't turn out to be so bad.
-9. tiny-skia: I don't want to implement path stroking & filling by hand, and this library is
-   reasonably small and well maintained.
 10. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
     most of the code would be based on a implementation like this anyways. This performs well enough
     even though cells have to be concatenated into a single string for processing. There are smarter
     ways to to this processing I'm sure, but I'll optimize when I need to.
-11. unicode-width: I need to access the width of characters to figure out row layout and
+11. unicode-properties: I need to check if a character is an emoji in order to know how to handle
+    foreground colors and bold/italic styles.
+12. unicode-width: I need to access the width of characters to figure out row layout and
     implementing this myself seems silly. This is already pulled in by ratatui, so it doesn't really
     increase the size of the dependency tree.
-12. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
+13. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
 
 [Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=flat-square
 [Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=flat-square

@@ -10,6 +10,13 @@ use std::{
 
 use bitvec::vec::BitVec;
 use indexmap::IndexMap;
+use raqote::{
+    DrawOptions,
+    DrawTarget,
+    SolidSource,
+    StrokeStyle,
+    Transform,
+};
 use ratatui::{
     backend::{
         Backend,
@@ -25,20 +32,21 @@ use ratatui::{
 };
 use rustybuzz::{
     shape_with_plan,
-    ttf_parser::GlyphId,
+    ttf_parser::{
+        GlyphId,
+        RgbaColor,
+    },
     GlyphBuffer,
     UnicodeBuffer,
-};
-use tiny_skia::{
-    Paint,
-    PixmapMut,
-    Stroke,
-    Transform,
-    BYTES_PER_PIXEL,
 };
 use unicode_bidi::{
     Level,
     ParagraphBidiInfo,
+};
+use unicode_properties::{
+    GeneralCategoryGroup,
+    UnicodeEmoji,
+    UnicodeGeneralCategory,
 };
 use unicode_width::UnicodeWidthStr;
 use web_time::{
@@ -97,19 +105,27 @@ use crate::{
         text_atlas::{
             Atlas,
             CacheRect,
+            Entry,
             Key,
         },
         Outline,
+        Painter,
     },
     RandomState,
 };
 
 const NULL_CELL: Cell = Cell::new("");
 
+pub(super) struct RenderInfo {
+    cell: usize,
+    cached: CacheRect,
+    underline_pos_min: u16,
+    underline_pos_max: u16,
+}
 /// Map from (x, y, glyph) -> (cell index, cache entry).
 /// We use an IndexMap because we want a consistent rendering order for
 /// vertices.
-type Rendered = IndexMap<(i32, i32, GlyphId), (usize, CacheRect), RandomState>;
+type Rendered = IndexMap<(i32, i32, GlyphId), RenderInfo, RandomState>;
 
 /// Set of (x, y, glyph, char width).
 type Sourced = HashSet<(i32, i32, GlyphId, u32), RandomState>;
@@ -155,6 +171,7 @@ pub struct WgpuBackend<
 
     pub(super) cached: Atlas,
     pub(super) text_cache: Texture,
+    pub(super) text_mask: Texture,
     pub(super) bg_vertices: Vec<TextBgVertexMember>,
     pub(super) text_indices: Vec<[u32; 6]>,
     pub(super) text_vertices: Vec<TextVertexMember>,
@@ -219,7 +236,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         let width = width - inset_width;
         let height = height - inset_height;
 
-        let chars_wide = width / self.fonts.width_px();
+        let chars_wide = width / self.fonts.min_width_px();
         let chars_high = height / self.fonts.height_px();
 
         if chars_wide != current_width as u32 || chars_high != current_height as u32 {
@@ -237,7 +254,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
 
         self.wgpu_state = build_wgpu_state(
             &self.device,
-            chars_wide * self.fonts.width_px(),
+            chars_wide * self.fonts.min_width_px(),
             chars_high * self.fonts.height_px(),
         );
 
@@ -297,7 +314,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
                     )
                     .unwrap();
                 uniforms.copy_from_slice(bytemuck::cast_slice(&[
-                    bounds.columns_rows.width as f32 * self.fonts.width_px() as f32,
+                    bounds.columns_rows.width as f32 * self.fonts.min_width_px() as f32,
                     bounds.columns_rows.height as f32 * self.fonts.height_px() as f32,
                     0.0,
                     0.0,
@@ -452,7 +469,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
         let height = self.surface_config.height - inset_height;
 
         Ok(Size {
-            width: (width / self.fonts.width_px()) as u16,
+            width: (width / self.fonts.min_width_px()) as u16,
             height: (height / self.fonts.height_px()) as u16,
         })
     }
@@ -467,7 +484,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 
         Ok(WindowSize {
             columns_rows: Size {
-                width: (width / self.fonts.width_px()) as u16,
+                width: (width / self.fonts.min_width_px()) as u16,
                 height: (height / self.fonts.height_px()) as u16,
             },
             pixels: Size {
@@ -541,131 +558,124 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             // of a cluster and 2) the next cluster in the sequence starts with a non-zero
             // advance.
             let mut next_advance = 0;
-            let mut shape =
-                |font: &Font, fake_bold, fake_italic, buffer: GlyphBuffer| -> UnicodeBuffer {
-                    let metrics = font.font();
-                    let advance_scale = self.fonts.height_px() as f32 / metrics.height() as f32;
+            let mut shape = |font: &Font,
+                             fake_bold,
+                             fake_italic,
+                             buffer: GlyphBuffer|
+             -> UnicodeBuffer {
+                let metrics = font.font();
+                let advance_scale = self.fonts.height_px() as f32 / metrics.height() as f32;
 
-                    for (info, position) in buffer
-                        .glyph_infos()
-                        .iter()
-                        .zip(buffer.glyph_positions().iter())
-                    {
-                        let cell = &row[info.cluster as usize];
-                        let sourced = &mut new_sourced[info.cluster as usize];
+                for (info, position) in buffer
+                    .glyph_infos()
+                    .iter()
+                    .zip(buffer.glyph_positions().iter())
+                {
+                    let cell_idx = self.rowmap[info.cluster as usize] as usize;
+                    let cell = &row[cell_idx];
+                    let max_width = cell.symbol().width();
+                    let sourced = &mut new_sourced[cell_idx];
 
-                        let basey = y as i32 * self.fonts.height_px() as i32
-                            + (position.y_offset as f32 * advance_scale) as i32;
-                        let advance = (position.x_advance as f32 * advance_scale) as i32;
-                        if advance != 0 {
-                            x += next_advance;
-                            next_advance = advance;
-                        }
-                        let basex = x + (position.x_offset as f32 * advance_scale) as i32;
+                    let basey = y as i32 * self.fonts.height_px() as i32
+                        + (position.y_offset as f32 * advance_scale) as i32;
+                    let advance = (position.x_advance as f32 * advance_scale) as i32;
+                    let advance = (advance / self.fonts.min_width_px() as i32)
+                        .clamp(-(max_width as i32), max_width as i32)
+                        * self.fonts.min_width_px() as i32;
+                    if advance != 0 {
+                        x += next_advance;
+                        next_advance = advance;
+                    }
+                    let basex = x + (position.x_offset as f32 * advance_scale) as i32;
 
-                        // This assumes that we only want to underline the first character in the
-                        // cluster, and that the remaining characters are all combining characters
-                        // which don't need an underline.
-                        let set = if advance != 0 {
-                            Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED
-                        } else {
-                            Modifier::BOLD | Modifier::ITALIC
-                        };
+                    // This assumes that we only want to underline the first character in the
+                    // cluster, and that the remaining characters are all combining characters
+                    // which don't need an underline.
+                    let set = if advance != 0 {
+                        Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED
+                    } else {
+                        Modifier::BOLD | Modifier::ITALIC
+                    };
 
-                        let key = Key {
-                            style: cell.modifier.intersection(set),
-                            glyph: info.glyph_id,
-                            font: font.id(),
-                        };
+                    let key = Key {
+                        style: cell.modifier.intersection(set),
+                        glyph: info.glyph_id,
+                        font: font.id(),
+                    };
 
-                        let width = ((metrics
-                            .glyph_hor_advance(GlyphId(info.glyph_id as _))
-                            .unwrap_or_default() as f32
-                            * advance_scale) as u32)
-                            .max(font.char_width(self.fonts.height_px()));
-                        let width = width / font.char_width(self.fonts.height_px());
+                    let width = ((metrics
+                        .glyph_hor_advance(GlyphId(info.glyph_id as _))
+                        .unwrap_or_default() as f32
+                        * advance_scale) as u32)
+                        .max(font.char_width(self.fonts.height_px()));
+                    let rendered_chars_wide = width / self.fonts.min_width_px();
+                    let chars_wide = rendered_chars_wide.min(max_width as u32);
 
-                        let cached = self.cached.get(
-                            &key,
-                            width * self.fonts.width_px(),
-                            self.fonts.height_px(),
-                        );
+                    let cached = self.cached.get(
+                        &key,
+                        chars_wide * self.fonts.min_width_px(),
+                        self.fonts.height_px(),
+                    );
 
-                        let offset = (basey.max(0) as usize / self.fonts.height_px() as usize)
-                            .min(bounds.height as usize - 1)
-                            * bounds.width as usize
-                            + (basex.max(0) as usize / self.fonts.width_px() as usize)
-                                .min(bounds.width as usize - 1);
+                    let offset = (basey.max(0) as usize / self.fonts.height_px() as usize)
+                        .min(bounds.height as usize - 1)
+                        * bounds.width as usize
+                        + (basex.max(0) as usize / self.fonts.min_width_px() as usize)
+                            .min(bounds.width as usize - 1);
 
-                        sourced.insert((basex, basey, GlyphId(info.glyph_id as _), width));
-                        self.rendered[offset].insert(
-                            (basex, basey, GlyphId(info.glyph_id as _)),
-                            (y * bounds.width as usize + info.cluster as usize, *cached),
-                        );
-                        for x_offset in 0..width as usize {
-                            self.dirty_cells.set(offset + x_offset, true);
-                        }
+                    sourced.insert((basex, basey, GlyphId(info.glyph_id as _), chars_wide));
 
-                        if cached.cached() {
-                            continue;
-                        }
-
-                        pending_cache_updates.entry(key).or_insert_with(|| {
-                            let mut render = Outline::default();
-                            if metrics
-                                .outline_glyph(GlyphId(info.glyph_id as _), &mut render)
-                                .is_some()
-                            {
-                                if let Some(path) = render.finish().and_then(|path| {
-                                    let skew = if fake_italic {
-                                        Transform::from_skew(-0.25, 0.0).post_translate(
-                                            -(width as f32 / advance_scale * 0.121),
-                                            0.0,
-                                        )
-                                    } else {
-                                        Transform::default()
-                                    };
-
-                                    // Some fonts (Fairfax for example) return character bounds
-                                    // where the entire glyph has negative bounds. I'm sure there's
-                                    // some reason for this, but until I understand the reason, this
-                                    // makes the character actually render rather than produce a
-                                    // blank glyph.
-                                    let x_off = if path.bounds().right().is_sign_negative() {
-                                        -path.bounds().left()
-                                    } else {
-                                        0.
-                                    };
-                                    path.transform(
-                                        Transform::from_scale(1., -1.)
-                                            .post_concat(skew)
-                                            .post_translate(x_off, metrics.ascender() as f32)
-                                            .post_scale(advance_scale, advance_scale),
-                                    )
-                                }) {
-                                    return (
-                                        cached,
-                                        Some((
-                                            (metrics.ascender() as f32 * advance_scale) as usize,
-                                            metrics
-                                                .underline_metrics()
-                                                .map(|m| {
-                                                    (m.thickness as f32 * advance_scale) as usize
-                                                })
-                                                .unwrap_or(1),
-                                            fake_bold,
-                                            path,
-                                        )),
-                                    );
-                                }
-                            }
-
-                            (cached, None)
-                        });
+                    let mut underline_pos_min = 0;
+                    let mut underline_pos_max = 0;
+                    if key.style.contains(Modifier::UNDERLINED) {
+                        let underline_position = (metrics.ascender() as f32 * advance_scale) as u16;
+                        let underline_thickness = metrics
+                            .underline_metrics()
+                            .map(|m| (m.thickness as f32 * advance_scale) as u16)
+                            .unwrap_or(1);
+                        underline_pos_min = underline_position;
+                        underline_pos_max = underline_pos_min + underline_thickness;
                     }
 
-                    buffer.clear()
-                };
+                    self.rendered[offset].insert(
+                        (basex, basey, GlyphId(info.glyph_id as _)),
+                        RenderInfo {
+                            cell: y * bounds.width as usize + cell_idx,
+                            cached: *cached,
+                            underline_pos_min,
+                            underline_pos_max,
+                        },
+                    );
+                    for x_offset in 0..chars_wide as usize {
+                        self.dirty_cells.set(offset + x_offset, true);
+                    }
+
+                    if cached.cached() {
+                        continue;
+                    }
+
+                    pending_cache_updates.entry(key).or_insert_with(|| {
+                        let ch = self.row[info.cluster as usize..].chars().next().unwrap();
+                        let is_emoji = ch.is_emoji_char()
+                            && !matches!(ch.general_category_group(), GeneralCategoryGroup::Number);
+
+                        let (rect, image) = rasterize_glyph(
+                            cached,
+                            metrics,
+                            info,
+                            fake_italic & !is_emoji,
+                            fake_bold & !is_emoji,
+                            advance_scale,
+                            self.fonts.min_width_px(),
+                            chars_wide,
+                            rendered_chars_wide,
+                        );
+                        (rect, image, is_emoji)
+                    });
+                }
+
+                buffer.clear()
+            };
 
             let bidi = ParagraphBidiInfo::new(&self.row, None);
             let (levels, runs) = bidi.visual_runs(0..bidi.levels.len());
@@ -675,7 +685,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 
             for (level, range) in runs.into_iter().map(|run| (levels[run.start], run)) {
                 let chars = &self.row[range.clone()];
-                let cells = &self.rowmap[range];
+                let cells = &self.rowmap[range.clone()];
                 for (idx, ch) in chars.char_indices() {
                     let cell_idx = cells[idx] as usize;
                     let (font, fake_bold, fake_italic) = fontmap[cell_idx];
@@ -704,7 +714,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         current_level = level;
                     }
 
-                    self.buffer.add(ch, cell_idx as u32);
+                    self.buffer.add(ch, (range.start + idx) as u32);
                 }
             }
 
@@ -726,7 +736,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         let cell = ((*y).max(0) as usize / self.fonts.height_px() as usize)
                             .min(bounds.height as usize - 1)
                             * bounds.width as usize
-                            + ((*x).max(0) as usize / self.fonts.width_px() as usize)
+                            + ((*x).max(0) as usize / self.fonts.min_width_px() as usize)
                                 .min(bounds.width as usize - 1);
 
                         for offset_x in 0..*width as usize {
@@ -744,50 +754,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             }
         }
 
-        for (key, (cached, maybe_path)) in pending_cache_updates {
-            let mut image =
-                vec![[0; BYTES_PER_PIXEL]; cached.width as usize * cached.height as usize];
-
-            if let Some((underline_position, underline_thickness, fake_bold, path)) = maybe_path {
-                let mut pixmap = PixmapMut::from_bytes(
-                    bytemuck::cast_slice_mut(&mut image),
-                    cached.width,
-                    cached.height,
-                )
-                .expect("Invalid image buffer");
-
-                let mut paint = Paint::default();
-                paint.set_color(tiny_skia::Color::WHITE);
-                pixmap.fill_path(
-                    &path,
-                    &paint,
-                    tiny_skia::FillRule::Winding,
-                    Transform::default(),
-                    None,
-                );
-
-                if fake_bold {
-                    pixmap.stroke_path(
-                        &path,
-                        &paint,
-                        &Stroke {
-                            width: 1.5,
-                            ..Default::default()
-                        },
-                        Transform::default(),
-                        None,
-                    );
-                }
-
-                if key.style.contains(Modifier::UNDERLINED) {
-                    for y in underline_position..underline_position + underline_thickness {
-                        for x in 0..cached.width {
-                            image[y * cached.width as usize + x as usize] = [255; BYTES_PER_PIXEL];
-                        }
-                    }
-                }
-            }
-
+        for (_, (cached, image, mask)) in pending_cache_updates {
             self.queue.write_texture(
                 ImageCopyTexture {
                     texture: &self.text_cache,
@@ -799,7 +766,31 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     },
                     aspect: TextureAspect::All,
                 },
-                &image.into_iter().map(|[_, _, _, a]| a).collect::<Vec<_>>(),
+                bytemuck::cast_slice(&image),
+                ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(cached.width * size_of::<u32>() as u32),
+                    rows_per_image: Some(cached.height),
+                },
+                Extent3d {
+                    width: cached.width,
+                    height: cached.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+
+            self.queue.write_texture(
+                ImageCopyTexture {
+                    texture: &self.text_mask,
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: cached.x,
+                        y: cached.y,
+                        z: 0,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                &vec![if mask { 255 } else { 0 }; (cached.width * cached.height) as usize],
                 ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(cached.width),
@@ -810,7 +801,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     height: cached.height,
                     depth_or_array_layers: 1,
                 },
-            );
+            )
         }
 
         if self.post_process.needs_update() || self.dirty_cells.any() {
@@ -833,30 +824,41 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                 let [r, g, b] = bg_color;
                 let bg_color_u32: u32 = u32::from_be_bytes([r, g, b, 255]);
 
-                let x = (index as u32 % bounds.width as u32 * self.fonts.width_px()) as f32;
                 let y = (index as u32 / bounds.width as u32 * self.fonts.height_px()) as f32;
+                let x = (index as u32 % bounds.width as u32 * self.fonts.min_width_px()) as f32;
+                for offset_x in 0..cell.symbol().width() {
+                    let x = x + (offset_x as u32 * self.fonts.min_width_px()) as f32;
+                    self.bg_vertices.push(TextBgVertexMember {
+                        vertex: [x, y],
+                        bg_color: bg_color_u32,
+                    });
+                    self.bg_vertices.push(TextBgVertexMember {
+                        vertex: [x + self.fonts.min_width_px() as f32, y],
+                        bg_color: bg_color_u32,
+                    });
+                    self.bg_vertices.push(TextBgVertexMember {
+                        vertex: [x, y + self.fonts.height_px() as f32],
+                        bg_color: bg_color_u32,
+                    });
+                    self.bg_vertices.push(TextBgVertexMember {
+                        vertex: [
+                            x + self.fonts.min_width_px() as f32,
+                            y + self.fonts.height_px() as f32,
+                        ],
+                        bg_color: bg_color_u32,
+                    });
+                }
 
-                self.bg_vertices.push(TextBgVertexMember {
-                    vertex: [x, y],
-                    bg_color: bg_color_u32,
-                });
-                self.bg_vertices.push(TextBgVertexMember {
-                    vertex: [x + self.fonts.width_px() as f32, y],
-                    bg_color: bg_color_u32,
-                });
-                self.bg_vertices.push(TextBgVertexMember {
-                    vertex: [x, y + self.fonts.height_px() as f32],
-                    bg_color: bg_color_u32,
-                });
-                self.bg_vertices.push(TextBgVertexMember {
-                    vertex: [
-                        x + self.fonts.width_px() as f32,
-                        y + self.fonts.height_px() as f32,
-                    ],
-                    bg_color: bg_color_u32,
-                });
-
-                for ((x, y, _), (cell, cached)) in to_render.iter() {
+                for (
+                    (x, y, _),
+                    RenderInfo {
+                        cell,
+                        cached,
+                        underline_pos_min,
+                        underline_pos_max,
+                    },
+                ) in to_render.iter()
+                {
                     let cell = &self.cells[*cell];
                     let reverse = cell.modifier.contains(Modifier::REVERSED);
                     let fg_color = if reverse {
@@ -879,7 +881,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     let [r, g, b] = fg_color;
                     let fg_color: u32 = u32::from_be_bytes([r, g, b, alpha]);
 
-                    for offset_x in (0..cached.width).step_by(self.fonts.width_px() as usize) {
+                    for offset_x in (0..cached.width).step_by(self.fonts.min_width_px() as usize) {
                         self.text_indices.push([
                             index_offset,     // x, y
                             index_offset + 1, // x + w, y
@@ -895,35 +897,46 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         let uvx = cached.x + offset_x;
                         let uvy = cached.y;
 
+                        let underline_pos = (*underline_pos_min as u32 + uvy) << 16
+                            | (*underline_pos_max as u32 + uvy);
+
                         // 0
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x, y],
                             uv: [uvx as f32, uvy as f32],
                             fg_color,
+                            underline_pos,
+                            underline_color: fg_color,
                         });
                         // 1
                         self.text_vertices.push(TextVertexMember {
-                            vertex: [x + self.fonts.width_px() as f32, y],
-                            uv: [uvx as f32 + self.fonts.width_px() as f32, uvy as f32],
+                            vertex: [x + self.fonts.min_width_px() as f32, y],
+                            uv: [uvx as f32 + self.fonts.min_width_px() as f32, uvy as f32],
                             fg_color,
+                            underline_pos,
+                            underline_color: fg_color,
                         });
                         // 2
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x, y + self.fonts.height_px() as f32],
                             uv: [uvx as f32, uvy as f32 + self.fonts.height_px() as f32],
                             fg_color,
+                            underline_pos,
+                            underline_color: fg_color,
                         });
                         // 3
                         self.text_vertices.push(TextVertexMember {
                             vertex: [
-                                x + self.fonts.width_px() as f32,
+                                x + self.fonts.min_width_px() as f32,
                                 y + self.fonts.height_px() as f32,
                             ],
                             uv: [
-                                uvx as f32 + self.fonts.width_px() as f32,
+                                uvx as f32 + self.fonts.min_width_px() as f32,
                                 uvy as f32 + self.fonts.height_px() as f32,
                             ],
                             fg_color,
+                            underline_pos,
+                            underline_color: fg_color,
                         });
                     }
                 }
@@ -961,6 +974,108 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             }
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rasterize_glyph(
+    cached: Entry,
+    metrics: &rustybuzz::Face,
+    info: &rustybuzz::GlyphInfo,
+    fake_italic: bool,
+    fake_bold: bool,
+    advance_scale: f32,
+    min_width: u32,
+    chars_wide: u32,
+    rendered_chars_wide: u32,
+) -> (CacheRect, Vec<u32>) {
+    let computed_offset = (rendered_chars_wide.saturating_sub(chars_wide) * min_width) as f32;
+    let computed_offset = -computed_offset / 2.0;
+
+    let skew = if fake_italic {
+        Transform::new(
+            /* scale x */ 1.0,
+            /* skew x */ 0.0,
+            /* skew y */ -0.25,
+            /* scale y */ 1.0,
+            /* translate x */ 0.25 * cached.width as f32,
+            /* translate y */ 0.0,
+        )
+    } else {
+        Transform::default()
+    };
+
+    let mut image = vec![0u32; cached.width as usize * cached.height as usize];
+    let mut target =
+        DrawTarget::from_backing(cached.width as i32, cached.height as i32, &mut image[..]);
+
+    let mut painter = Painter::new(
+        metrics,
+        &mut target,
+        skew,
+        fake_bold,
+        advance_scale,
+        metrics.ascender() as f32,
+        computed_offset,
+    );
+    if metrics
+        .paint_color_glyph(
+            GlyphId(info.glyph_id as _),
+            0,
+            RgbaColor::new(255, 255, 255, 255),
+            &mut painter,
+        )
+        .is_some()
+    {
+        for argb in image.iter_mut() {
+            let [a, r, g, b] = argb.to_be_bytes();
+            *argb = u32::from_le_bytes([r, g, b, a]);
+        }
+        return (*cached, image);
+    }
+
+    let mut render = Outline::default();
+    if let Some(bounds) = metrics.outline_glyph(GlyphId(info.glyph_id as _), &mut render) {
+        let path = render.finish();
+
+        let x_off = if bounds.x_max < 0 {
+            -bounds.x_min as f32
+        } else {
+            0.
+        };
+        let x_off = x_off + computed_offset;
+
+        let path = path.transform(
+            &Transform::scale(1., -1.)
+                .then_translate((x_off, metrics.ascender() as f32).into())
+                .then_scale(advance_scale, advance_scale)
+                .then(&skew),
+        );
+
+        target.fill(
+            &path,
+            &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
+            &DrawOptions {
+                antialias: raqote::AntialiasMode::Gray,
+                ..Default::default()
+            },
+        );
+
+        if fake_bold {
+            target.stroke(
+                &path,
+                &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
+                &StrokeStyle {
+                    width: 1.5,
+                    ..Default::default()
+                },
+                &DrawOptions::new(),
+            );
+        }
+
+        return (*cached, image);
+    }
+
+    (*cached, image)
 }
 
 #[cfg(test)]
@@ -1339,7 +1454,7 @@ mod tests {
                 let block = Block::bordered();
                 let area = block.inner(f.area());
                 f.render_widget(block, f.area());
-                f.render_widget(Paragraph::new("H̴̢͕̠͖͇̻͓̙̞͔͕͓̰͋͛͂̃̌͂͆͜͠"), area);
+                f.render_widget(Paragraph::new("H̴̢͕̠͖͇̻͓̙̞͔͕͓̰͋͛͂̃̌͂͆͜͠".underlined()), area);
             })
             .unwrap();
 
@@ -1379,7 +1494,7 @@ mod tests {
                 let block = Block::bordered();
                 let area = block.inner(f.area());
                 f.render_widget(block, f.area());
-                f.render_widget(Paragraph::new("H"), area);
+                f.render_widget(Paragraph::new("H".underlined()), area);
             })
             .unwrap();
 

@@ -1,6 +1,6 @@
 //! # Getting Started
 //! Check out the [examples](https://github.com/Jesterhearts/ratatui-wgpu/tree/main/examples)
-//! for a number of programs using`winit` for both native and web.
+//! for a number of programs using `winit` for both native and web.
 //!
 //! A [`WgpuBackend`] can be constructed using a [`Builder`] and then provided
 //! to a [`Terminal`](ratatui::Terminal). After that, rendering can be done as
@@ -9,7 +9,7 @@
 //! [`DefaultPostProcessor`](shaders::DefaultPostProcessor) implementation for
 //! guidance.
 //!
-//! Here's a short example using winit on native with the defaut post processor
+//! Here's a short example using winit on native with the default post processor
 //! implementation:
 //! ```
 //! # use std::{
@@ -112,14 +112,14 @@
 //! 1. No cursor rendering.
 //!     - The location of the cursor is tracked, and operations using it should
 //!       behave as expected, but the cursor is not rendered to the screen.
-//! 2. Attempting to render more unique (utf8 character *
-//!    BOLD|ITALIC|UNDERLINED) characters than can fit in the cache in a single
-//!    draw call will cause incorrect rendering. This is ~3750 characters at the
-//!    default font size with most fonts. If you need more than this, file a bug
-//!    and I'll do the work to make rendering handle an unbounded number of
-//!    unique characters. To put that in perspective, rendering every printable
-//!    ascii character in every combination of styles would take (95 * 8) 760
-//!    cache entries or ~20% of the cache.
+//! 2. Attempting to render more unique (utf8 character * BOLD|ITALIC)
+//!    characters than can fit in the cache in a single draw call will cause
+//!    incorrect rendering. This is ~3750 characters at the default font size
+//!    with most fonts. If you need more than this, file a bug and I'll do the
+//!    work to make rendering handle an unbounded number of unique characters.
+//!    To put that in perspective, rendering every printable ascii character in
+//!    every combination of styles would take (95 * 4) 380 cache entries or ~10%
+//!    of the cache.
 
 pub(crate) mod backend;
 pub(crate) mod colors;

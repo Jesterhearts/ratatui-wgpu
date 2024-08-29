@@ -98,8 +98,19 @@ impl<'a> Fonts<'a> {
 
     /// The maximum width (in pixels) across all fonts.
     #[inline]
+    #[deprecated(
+        since = "0.1.3",
+        note = "This dynamically computes the max width. It will be removed in 0.2.0. File a bug with your usecase if this would affect you."
+    )]
     pub fn width_px(&self) -> u32 {
-        self.char_width
+        std::iter::once(&self.last_resort)
+            .chain(self.regular.iter())
+            .chain(self.bold.iter())
+            .chain(self.italic.iter())
+            .chain(self.bold_italic.iter())
+            .map(|font| font.char_width(self.char_height))
+            .max()
+            .unwrap_or_default()
     }
 
     /// Change the height of all fonts in this collection to the specified
@@ -113,7 +124,7 @@ impl<'a> Fonts<'a> {
             .chain(self.italic.iter())
             .chain(self.bold_italic.iter())
             .map(|font| font.char_width(height_px))
-            .max()
+            .min()
             .unwrap_or_default();
     }
 
@@ -122,7 +133,7 @@ impl<'a> Fonts<'a> {
     pub fn add_regular_fonts(&mut self, fonts: impl IntoIterator<Item = Font<'a>>) {
         self.char_width =
             self.char_width
-                .max(Self::add_fonts(&mut self.regular, fonts, self.char_height));
+                .min(Self::add_fonts(&mut self.regular, fonts, self.char_height));
     }
 
     /// Add a new collection of fonts for bold styled text. These fonts will
@@ -134,7 +145,7 @@ impl<'a> Fonts<'a> {
     pub fn add_bold_fonts(&mut self, fonts: impl IntoIterator<Item = Font<'a>>) {
         self.char_width =
             self.char_width
-                .max(Self::add_fonts(&mut self.bold, fonts, self.char_height));
+                .min(Self::add_fonts(&mut self.bold, fonts, self.char_height));
     }
 
     /// Add a new collection of fonts for italic styled text. These fonts will
@@ -147,7 +158,7 @@ impl<'a> Fonts<'a> {
     pub fn add_italic_fonts(&mut self, fonts: impl IntoIterator<Item = Font<'a>>) {
         self.char_width =
             self.char_width
-                .max(Self::add_fonts(&mut self.italic, fonts, self.char_height));
+                .min(Self::add_fonts(&mut self.italic, fonts, self.char_height));
     }
 
     /// Add a new collection of fonts for bold italic styled text. These fonts
@@ -157,7 +168,7 @@ impl<'a> Fonts<'a> {
     /// bold fonts are supplied, rendering will fallback to the italic fonts
     /// with fake bolding.
     pub fn add_bold_italic_fonts(&mut self, fonts: impl IntoIterator<Item = Font<'a>>) {
-        self.char_width = self.char_width.max(Self::add_fonts(
+        self.char_width = self.char_width.min(Self::add_fonts(
             &mut self.bold_italic,
             fonts,
             self.char_height,
@@ -166,6 +177,11 @@ impl<'a> Fonts<'a> {
 }
 
 impl<'a> Fonts<'a> {
+    /// The minimum width (in pixels) across all fonts.
+    pub(crate) fn min_width_px(&self) -> u32 {
+        self.char_width
+    }
+
     pub(crate) fn count(&self) -> usize {
         1 + self.bold.len() + self.italic.len() + self.bold_italic.len() + self.regular.len()
     }
@@ -263,7 +279,7 @@ impl<'a> Fonts<'a> {
         target[len..]
             .iter()
             .map(|font| font.char_width(char_height))
-            .max()
+            .min()
             .unwrap_or_default()
     }
 }
