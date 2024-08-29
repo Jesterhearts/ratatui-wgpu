@@ -280,6 +280,6 @@ impl<'a> Fonts<'a> {
             .iter()
             .map(|font| font.char_width(char_height))
             .min()
-            .unwrap_or_default()
+            .unwrap_or(u32::MAX)
     }
 }
