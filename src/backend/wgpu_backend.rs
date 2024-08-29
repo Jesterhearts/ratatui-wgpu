@@ -1072,6 +1072,9 @@ fn rasterize_glyph(
     if let Some(bounds) = metrics.outline_glyph(GlyphId(info.glyph_id as _), &mut render) {
         let path = render.finish();
 
+        // Some fonts return bounds that are entirely negative. I'm not sure why this
+        // is, but it means the glyph won't render at all. We check for this here and
+        // offset it if so. This seems to let those fonts render correctly.
         let x_off = if bounds.x_max < 0 {
             -bounds.x_min as f32
         } else {

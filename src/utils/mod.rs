@@ -116,6 +116,11 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
         }
     }
 
+    /// The documentation for this function implies that you should use the
+    /// ouline stored from `outline_glyph`, but _actually_ you should be filling
+    /// the clipped path with whatever paint is provided.
+    /// See skrifa's [`ColorPainter`](https://docs.rs/skrifa/latest/skrifa/color/trait.ColorPainter.html)
+    /// for correct documentation.
     fn paint(&mut self, paint: rustybuzz::ttf_parser::colr::Paint<'a>) {
         let paint = match paint {
             rustybuzz::ttf_parser::colr::Paint::Solid(color) => {
@@ -210,8 +215,6 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
             ),
         };
 
-        self.target.set_transform(&self.compute_transform());
-
         let draw_options = DrawOptions {
             blend_mode: match self.modes.last().unwrap() {
                 CompositeMode::Clear => raqote::BlendMode::Clear,
@@ -246,7 +249,15 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
             ..Default::default()
         };
 
-        self.target.fill(&self.outline, &paint, &draw_options);
+        self.target.set_transform(&Transform::default());
+        self.target.fill_rect(
+            0.,
+            0.,
+            self.target.width() as f32,
+            self.target.height() as f32,
+            &paint,
+            &draw_options,
+        );
         if self.fake_bold {
             self.target.stroke(
                 &self.outline,

@@ -60,7 +60,11 @@ impl ApplicationHandler for App {
             .fontdb
             .faces()
             .filter_map(|info| {
-                if (info.monospaced || info.post_script_name.contains("Noto")) && info.index == 0 {
+                if (info.monospaced
+                    || info.post_script_name.contains("Emoji")
+                    || info.post_script_name.contains("emoji"))
+                    && info.index == 0
+                {
                     Some(info.id)
                 } else {
                     None
@@ -78,6 +82,7 @@ impl ApplicationHandler for App {
                         )))
                         .unwrap(),
                     )
+                    .with_font_size_px(72)
                     .with_fonts(fonts.into_iter().filter_map(|id| {
                         // Leaking here is fine for this short program and solves a lot of lifetime
                         // issues. Obviously don't do this in real code.
