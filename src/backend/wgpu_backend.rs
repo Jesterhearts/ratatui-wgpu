@@ -1031,7 +1031,6 @@ fn rasterize_glyph(
         metrics,
         &mut target,
         skew,
-        fake_bold,
         scale,
         metrics.ascender() as f32 * scale + computed_offset_y,
         computed_offset_x,
@@ -1056,7 +1055,11 @@ fn rasterize_glyph(
                 height: cached.height as i32 * 2,
                 data: &image,
             },
-            &DrawOptions::default(),
+            &DrawOptions {
+                blend_mode: raqote::BlendMode::Src,
+                antialias: raqote::AntialiasMode::None,
+                ..Default::default()
+            },
         );
 
         let mut final_image = final_image.into_vec();
@@ -1118,7 +1121,11 @@ fn rasterize_glyph(
                 height: cached.height as i32 * 2,
                 data: &image,
             },
-            &DrawOptions::default(),
+            &DrawOptions {
+                blend_mode: raqote::BlendMode::Src,
+                antialias: raqote::AntialiasMode::None,
+                ..Default::default()
+            },
         );
 
         return (*cached, final_image.into_vec());

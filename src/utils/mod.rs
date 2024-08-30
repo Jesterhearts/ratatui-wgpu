@@ -10,8 +10,8 @@ use raqote::{
     Point,
     SolidSource,
     Source,
-    StrokeStyle,
     Transform,
+    Vector,
 };
 use rustybuzz::ttf_parser::colr::CompositeMode;
 
@@ -63,13 +63,11 @@ pub(crate) struct Painter<'f, 'd, 'p> {
     font: &'f rustybuzz::Face<'d>,
     target: &'f mut DrawTarget<&'p mut [u32]>,
     skew: Transform,
-    fake_bold: bool,
     outline: Path,
     scale: f32,
     y_offset: f32,
     x_offset: f32,
     transforms: Vec<rustybuzz::ttf_parser::Transform>,
-    modes: Vec<CompositeMode>,
 }
 
 impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
@@ -77,7 +75,6 @@ impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
         font: &'f rustybuzz::Face<'d>,
         target: &'f mut DrawTarget<&'p mut [u32]>,
         skew: Transform,
-        fake_bold: bool,
         scale: f32,
         y_offset: f32,
         x_offset: f32,
@@ -86,13 +83,11 @@ impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
             font,
             target,
             skew,
-            fake_bold,
             outline: PathBuilder::new().finish(),
             scale,
             y_offset,
             x_offset,
             transforms: vec![],
-            modes: vec![CompositeMode::SourceOver],
         }
     }
 
@@ -132,23 +127,43 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
                 ))
             }
             rustybuzz::ttf_parser::colr::Paint::LinearGradient(grad) => {
+                // https://learn.microsoft.com/en-us/typography/opentype/spec/colr#linear-gradients
+                let mut stops = grad
+                    .stops(0, &[])
+                    .map(|stop| GradientStop {
+                        position: stop.stop_offset,
+                        color: Color::new(
+                            stop.color.alpha,
+                            stop.color.red,
+                            stop.color.green,
+                            stop.color.blue,
+                        ),
+                    })
+                    .collect::<Vec<_>>();
+                stops.sort_by(|l, r| l.position.total_cmp(&r.position));
+
+                let transform = self.compute_transform();
+                let p0 = transform.transform_point(Point::new(grad.x0, grad.y0));
+                let p1 = transform.transform_point(Point::new(grad.x1, grad.y1));
+                let p2 = transform.transform_point(Point::new(grad.x2, grad.y2));
+
+                if p0 == p1 || p0 == p2 {
+                    return;
+                }
+
+                // Get the line perpendicular to p0p2
+                let dist = p2 - p0;
+                let perp = Vector::new(dist.y, -dist.x);
+
+                // Project the vector p0p1 onto the perpendicular line passing through p0
+                // https://en.wikipedia.org/wiki/Vector_projection#Vector_projection_2
+                let dist = p1 - p0;
+                let p3 = p0 + perp * (dist.dot(perp) / perp.length().powi(2));
+
                 Source::new_linear_gradient(
-                    Gradient {
-                        stops: grad
-                            .stops(0, &[])
-                            .map(|stop| GradientStop {
-                                position: stop.stop_offset,
-                                color: Color::new(
-                                    stop.color.alpha,
-                                    stop.color.red,
-                                    stop.color.green,
-                                    stop.color.blue,
-                                ),
-                            })
-                            .collect(),
-                    },
-                    Point::new(grad.x0, grad.y0),
-                    Point::new(grad.x2, grad.y2),
+                    Gradient { stops },
+                    p0,
+                    p3,
                     match grad.extend {
                         rustybuzz::ttf_parser::colr::GradientExtend::Pad => raqote::Spread::Pad,
                         rustybuzz::ttf_parser::colr::GradientExtend::Repeat => {
@@ -161,23 +176,70 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
                 )
             }
             rustybuzz::ttf_parser::colr::Paint::RadialGradient(grad) => {
-                Source::new_radial_gradient(
-                    Gradient {
-                        stops: grad
-                            .stops(0, &[])
-                            .map(|stop| GradientStop {
-                                position: stop.stop_offset,
-                                color: Color::new(
-                                    stop.color.alpha,
-                                    stop.color.red,
-                                    stop.color.green,
-                                    stop.color.blue,
-                                ),
-                            })
-                            .collect(),
+                let mut stops = grad
+                    .stops(0, &[])
+                    .map(|stop| GradientStop {
+                        position: stop.stop_offset,
+                        color: Color::new(
+                            stop.color.alpha,
+                            stop.color.red,
+                            stop.color.green,
+                            stop.color.blue,
+                        ),
+                    })
+                    .collect::<Vec<_>>();
+                stops.sort_by(|l, r| l.position.total_cmp(&r.position));
+
+                let p0 = Point::new(grad.x0, grad.y0);
+                let p1 = Point::new(grad.x1, grad.y1);
+                let r0 = grad.r0;
+                let r1 = grad.r1;
+
+                if p0 == p1 && r0 == r1 {
+                    return;
+                }
+
+                // TODO: This still produces incorrect output (compare e.g. the rocket from
+                // SegoeUIEmoji to other renderers).
+                Source::TwoCircleRadialGradient(
+                    Gradient { stops },
+                    match grad.extend {
+                        rustybuzz::ttf_parser::colr::GradientExtend::Pad => raqote::Spread::Pad,
+                        rustybuzz::ttf_parser::colr::GradientExtend::Repeat => {
+                            raqote::Spread::Repeat
+                        }
+                        rustybuzz::ttf_parser::colr::GradientExtend::Reflect => {
+                            raqote::Spread::Reflect
+                        }
                     },
-                    Point::new(grad.x0, grad.y0),
-                    grad.r1 - grad.r0,
+                    p0,
+                    r0,
+                    p1,
+                    r1,
+                    self.compute_transform().inverse().unwrap_or_default(),
+                )
+            }
+            rustybuzz::ttf_parser::colr::Paint::SweepGradient(grad) => {
+                let mut stops = grad
+                    .stops(0, &[])
+                    .map(|stop| GradientStop {
+                        position: stop.stop_offset,
+                        color: Color::new(
+                            stop.color.alpha,
+                            stop.color.red,
+                            stop.color.green,
+                            stop.color.blue,
+                        ),
+                    })
+                    .collect::<Vec<_>>();
+                stops.sort_by(|l, r| l.position.total_cmp(&r.position));
+
+                Source::new_sweep_gradient(
+                    Gradient { stops },
+                    self.compute_transform()
+                        .transform_point(Point::new(grad.center_x, grad.center_y)),
+                    grad.start_angle,
+                    grad.end_angle,
                     match grad.extend {
                         rustybuzz::ttf_parser::colr::GradientExtend::Pad => raqote::Spread::Pad,
                         rustybuzz::ttf_parser::colr::GradientExtend::Repeat => {
@@ -189,34 +251,53 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
                     },
                 )
             }
-            rustybuzz::ttf_parser::colr::Paint::SweepGradient(grad) => Source::new_sweep_gradient(
-                Gradient {
-                    stops: grad
-                        .stops(0, &[])
-                        .map(|stop| GradientStop {
-                            position: stop.stop_offset,
-                            color: Color::new(
-                                stop.color.alpha,
-                                stop.color.red,
-                                stop.color.green,
-                                stop.color.blue,
-                            ),
-                        })
-                        .collect(),
-                },
-                Point::new(grad.center_x, grad.center_y),
-                grad.start_angle,
-                grad.end_angle,
-                match grad.extend {
-                    rustybuzz::ttf_parser::colr::GradientExtend::Pad => raqote::Spread::Pad,
-                    rustybuzz::ttf_parser::colr::GradientExtend::Repeat => raqote::Spread::Repeat,
-                    rustybuzz::ttf_parser::colr::GradientExtend::Reflect => raqote::Spread::Reflect,
-                },
-            ),
         };
 
         let draw_options = DrawOptions {
-            blend_mode: match self.modes.last().unwrap() {
+            antialias: raqote::AntialiasMode::None,
+            ..Default::default()
+        };
+
+        self.target.set_transform(&Transform::default());
+        self.target.fill_rect(
+            0.,
+            0.,
+            self.target.width() as f32,
+            self.target.height() as f32,
+            &paint,
+            &draw_options,
+        );
+    }
+
+    fn push_clip(&mut self) {
+        self.target.set_transform(&self.compute_transform());
+        self.target.push_clip(&self.outline);
+    }
+
+    fn push_clip_box(&mut self, clipbox: rustybuzz::ttf_parser::colr::ClipBox) {
+        let transform = self.compute_transform();
+
+        let xy0 = transform.transform_point((clipbox.x_min, clipbox.y_min).into());
+        let xy1 = transform.transform_point((clipbox.x_max, clipbox.y_max).into());
+        let xy2 = transform.transform_point((clipbox.x_min, clipbox.y_max).into());
+        let xy3 = transform.transform_point((clipbox.x_max, clipbox.y_min).into());
+        let min_xy = xy0.min(xy1).min(xy2).min(xy3);
+        let max_xy = xy0.max(xy1).max(xy2).max(xy3);
+
+        self.target.push_clip_rect(IntRect {
+            min: min_xy.to_i32(),
+            max: max_xy.to_i32(),
+        });
+    }
+
+    fn pop_clip(&mut self) {
+        self.target.pop_clip();
+    }
+
+    fn push_layer(&mut self, mode: rustybuzz::ttf_parser::colr::CompositeMode) {
+        self.target.push_layer_with_blend(
+            1.0,
+            match mode {
                 CompositeMode::Clear => raqote::BlendMode::Clear,
                 CompositeMode::Source => raqote::BlendMode::Src,
                 CompositeMode::Destination => raqote::BlendMode::Dst,
@@ -246,60 +327,11 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
                 CompositeMode::Color => raqote::BlendMode::Color,
                 CompositeMode::Luminosity => raqote::BlendMode::Luminosity,
             },
-            ..Default::default()
-        };
-
-        self.target.set_transform(&Transform::default());
-        self.target.fill_rect(
-            0.,
-            0.,
-            self.target.width() as f32,
-            self.target.height() as f32,
-            &paint,
-            &draw_options,
         );
-        if self.fake_bold {
-            self.target.stroke(
-                &self.outline,
-                &paint,
-                &StrokeStyle {
-                    width: 1.5,
-                    ..Default::default()
-                },
-                &draw_options,
-            );
-        }
-    }
-
-    fn push_clip(&mut self) {
-        self.target.set_transform(&self.compute_transform());
-        self.target.push_clip(&self.outline);
-    }
-
-    fn push_clip_box(&mut self, clipbox: rustybuzz::ttf_parser::colr::ClipBox) {
-        let transform = self.compute_transform();
-        let min = transform
-            .transform_point((clipbox.x_min, clipbox.y_min).into())
-            .round();
-        let max = transform
-            .transform_point((clipbox.x_max, clipbox.y_max).into())
-            .round();
-        self.target.push_clip_rect(IntRect {
-            min: (min.x.min(max.x) as i32, min.y.min(max.y) as i32).into(),
-            max: (max.x.max(min.x) as i32, max.y.max(min.y) as i32).into(),
-        });
-    }
-
-    fn pop_clip(&mut self) {
-        self.target.pop_clip();
-    }
-
-    fn push_layer(&mut self, mode: rustybuzz::ttf_parser::colr::CompositeMode) {
-        self.modes.push(mode);
     }
 
     fn pop_layer(&mut self) {
-        self.modes.pop();
+        self.target.pop_layer();
     }
 
     fn push_transform(&mut self, transform: rustybuzz::ttf_parser::Transform) {
