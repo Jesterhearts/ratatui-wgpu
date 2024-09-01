@@ -124,6 +124,7 @@
 pub(crate) mod backend;
 pub(crate) mod colors;
 pub(crate) mod fonts;
+pub(crate) mod graphics;
 pub mod shaders;
 pub(crate) mod utils;
 
