@@ -94,6 +94,7 @@ use crate::{
         Font,
         Fonts,
     },
+    graphics::Canvas,
     shaders::DefaultPostProcessor,
     utils::{
         plan_cache::PlanCache,
@@ -485,6 +486,8 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             (drawable_height / self.fonts.height_px()) * self.fonts.height_px(),
         );
 
+        let canvas = Canvas::new(self.fonts.min_width_px(), self.fonts.height_px());
+
         Ok(WgpuBackend {
             post_process: P::compile(
                 &device,
@@ -523,6 +526,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             fonts: self.fonts,
             reset_fg: self.reset_fg,
             reset_bg: self.reset_bg,
+            canvas,
             fast_duration: self.fast_blink,
             last_fast_toggle: Instant::now(),
             show_fast: true,

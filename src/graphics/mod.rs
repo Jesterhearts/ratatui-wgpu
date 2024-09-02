@@ -1,13 +1,18 @@
-use std::f32::consts::PI;
+use std::{
+    f32::consts::PI,
+    ops::Range,
+};
 
 use lyon_path::{
     geom::{
+        self,
         CubicBezierSegment,
         LineSegment,
         QuadraticBezierSegment,
     },
     math::{
         Angle,
+        Box2D,
         Point,
         Transform,
         Vector,
@@ -30,6 +35,20 @@ use palette::{
     Mix,
 };
 
+const TOLERANCE: f32 = 1. / 256.;
+const SCALE: f32 = 8.;
+
+const ALPHA_X_LUT: [f32; SCALE as usize] = [
+    0.,
+    1. / 7. * 1. / 8.,
+    2. / 7. * 1. / 8.,
+    3. / 7. * 1. / 8.,
+    4. / 7. * 1. / 8.,
+    5. / 7. * 1. / 8.,
+    6. / 7. * 1. / 8.,
+    1. / 8.,
+];
+
 type Lut = [Rgba; 256];
 
 pub(crate) struct Image<'d> {
@@ -39,7 +58,7 @@ pub(crate) struct Image<'d> {
 }
 
 impl<'d> Image<'d> {
-    fn new(data: &'d mut [Rgba], width: u32, height: u32) -> Self {
+    pub(crate) fn new(data: &'d mut [Rgba], width: u32, height: u32) -> Self {
         debug_assert_eq!((width as usize * height as usize), data.len(),);
         Self {
             data,
@@ -53,8 +72,78 @@ impl<'d> Image<'d> {
         let point = point.round().to_u32();
         self.data[(point.y * self.width + point.x) as usize]
     }
+
+    #[cfg(test)]
+    #[allow(dead_code)] // used for debugging and updating goldens
+    pub(crate) fn save(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        Self::save_raw(self.data, self.width, self.height, path)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn save_raw(
+        data: &[Rgba],
+        width: u32,
+        height: u32,
+        path: impl AsRef<std::path::Path>,
+    ) -> std::io::Result<()> {
+        use std::fs::File;
+
+        use palette::{
+            rgb::PackedArgb,
+            Srgba,
+        };
+        use png::Encoder;
+
+        let file = File::create(path)?;
+        let mut writer = Encoder::new(file, width, height);
+        writer.set_color(png::ColorType::Rgba);
+
+        let mut writer = writer.write_header()?;
+        let data = data
+            .iter()
+            .map(|c| PackedArgb::pack(Srgba::<u8>::from_format(*c)).color)
+            .collect::<Vec<u32>>();
+        writer.write_image_data(bytemuck::cast_slice(&data))?;
+
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_raw(bytes: &[u8]) -> Vec<Rgba> {
+        use palette::{
+            rgb::PackedArgb,
+            Srgba,
+        };
+
+        let data: &[u32] = bytemuck::cast_slice(bytes);
+
+        data.iter()
+            .copied()
+            .map(|d| Srgba::<u8>::from(PackedArgb::from(d).unpack()).into_format())
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn load_from_memory(bytes: &[u8]) -> std::io::Result<(Vec<Rgba>, u32, u32)> {
+        use std::io::Cursor;
+
+        use png::Decoder;
+
+        let decoder = Decoder::new(Cursor::new(bytes));
+        let mut reader = decoder.read_info()?;
+
+        let mut buf = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut buf)?;
+
+        Ok((
+            Self::from_raw(&buf[..info.buffer_size()]),
+            info.width,
+            info.height,
+        ))
+    }
 }
 
+#[derive(Default)]
 struct ClipMask {
     width: u32,
     height: u32,
@@ -62,14 +151,6 @@ struct ClipMask {
 }
 
 impl ClipMask {
-    fn new(width: u32, height: u32) -> Self {
-        Self {
-            width,
-            height,
-            data: vec![0.; width as usize * height as usize],
-        }
-    }
-
     fn new_unmasked(width: u32, height: u32) -> Self {
         Self {
             width,
@@ -78,40 +159,149 @@ impl ClipMask {
         }
     }
 
+    fn re_use(&mut self, width: u32, height: u32) {
+        self.width = width;
+        self.height = height;
+        self.data.clear();
+        self.data
+            .resize(self.width as usize * self.height as usize, 0.);
+    }
+
     fn row_slice_mut(&mut self, y: usize) -> &mut [f32] {
         let y = (y * self.width as usize).min(self.data.len());
         &mut self.data[y..y + self.width as usize]
+    }
+
+    #[cfg(test)]
+    fn to_color(&self) -> Vec<Rgba> {
+        self.data
+            .iter()
+            .copied()
+            .map(|a| Rgba::new(a, a, a, 1.))
+            .collect()
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)] // used for debugging and updating goldens
+    fn save(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let mut colors = self.to_color();
+        let image = Image::new(&mut colors, self.width, self.height);
+        image.save(path)
+    }
+}
+
+impl std::fmt::Debug for ClipMask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "ClipMask {}x{}", self.width, self.height)?;
+        for y in 0..self.height {
+            let y = y as usize * self.width as usize;
+            let row = &self.data[y..y + self.width as usize];
+            for val in row.iter() {
+                write!(f, "{:.2},", val)?;
+            }
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct Edge {
+    dx: f32,
+    x: f32,
+    y_range: Range<usize>,
+    positive_winding: bool,
+}
+
+impl Edge {
+    fn new(mut line: LineSegment<f32>) -> Option<Self> {
+        line.from *= SCALE;
+        line.to *= SCALE;
+
+        let positive_winding = line.from.y < line.to.y;
+        if !positive_winding {
+            std::mem::swap(&mut line.from, &mut line.to);
+        }
+
+        let top = line.from.y.round();
+        let bottom = line.to.y.round();
+
+        if top == bottom {
+            return None;
+        }
+
+        let dx = (line.to.x - line.from.x) / (line.to.y - line.from.y);
+        let offset_y = top - line.from.y;
+
+        let x = line.from.x + dx * offset_y;
+
+        Some(Self {
+            dx,
+            x,
+            y_range: top as usize..bottom as usize,
+            positive_winding,
+        })
     }
 }
 
 #[derive(Debug, Default)]
 struct Rasterizer {
-    edges_by_y: Vec<Vec<LineSegment<f32>>>,
-    current_edges: Vec<LineSegment<f32>>,
+    edges_by_y: Vec<Vec<Edge>>,
+    current_edges: Vec<Edge>,
 
     height: usize,
 }
 
 impl Rasterizer {
     fn rasterize_path(&mut self, path: &Path, out: &mut ClipMask) {
+        let y_bounds = 0f32..out.height as f32;
+
         for control in path.iter() {
             match control {
                 lyon_path::Event::Begin { .. } => {}
-                lyon_path::Event::Line { from, to } => {
-                    let y = from.y.min(to.y) as usize;
-                    self.height = self.height.max(from.y.max(to.y) as usize);
+                lyon_path::Event::End { close: false, .. } => {}
+                lyon_path::Event::Line { from, to }
+                | lyon_path::Event::End {
+                    last: from,
+                    first: to,
+                    close: true,
+                } => {
+                    let Some(line) = LineSegment { from, to }.clipped_y(y_bounds.clone()) else {
+                        continue;
+                    };
 
-                    self.edges_by_y.resize_with(self.height, Vec::new);
-                    self.edges_by_y[y].push(LineSegment { from, to });
+                    let Some(edge) = Edge::new(line) else {
+                        continue;
+                    };
+
+                    self.height = self.height.max(edge.y_range.end);
+
+                    self.edges_by_y
+                        .resize_with(self.height.max(self.edges_by_y.len()), Vec::new);
+                    self.edges_by_y[edge.y_range.start].push(edge);
                 }
                 lyon_path::Event::Quadratic { from, ctrl, to } => {
                     let segment = QuadraticBezierSegment { from, ctrl, to };
                     let (_, maxy) = segment.fast_bounding_range_y();
-                    self.edges_by_y.resize_with(maxy as usize, Vec::new);
-                    segment.for_each_flattened(0.01, &mut |line| {
-                        let y = line.from.y.min(line.to.y) as usize;
-                        self.height = self.height.max(line.from.y.max(line.to.y) as usize);
-                        self.edges_by_y[y].push(*line);
+                    self.edges_by_y.resize_with(
+                        self.height
+                            .max((maxy * SCALE) as usize + 1)
+                            .max(self.edges_by_y.len()),
+                        Vec::new,
+                    );
+
+                    segment.for_each_flattened(TOLERANCE, &mut |line| {
+                        let Some(line) = line.clipped_y(y_bounds.clone()) else {
+                            return;
+                        };
+
+                        let Some(edge) = Edge::new(line) else {
+                            return;
+                        };
+
+                        self.height = self.height.max(edge.y_range.end);
+                        self.edges_by_y[edge.y_range.start].push(edge);
                     });
                 }
                 lyon_path::Event::Cubic {
@@ -127,91 +317,84 @@ impl Rasterizer {
                         to,
                     };
                     let (_, maxy) = segment.fast_bounding_range_y();
-                    self.edges_by_y.resize_with(maxy as usize, Vec::new);
+                    self.edges_by_y.resize_with(
+                        self.height
+                            .max((maxy * SCALE) as usize + 1)
+                            .max(self.edges_by_y.len()),
+                        Vec::new,
+                    );
 
-                    segment.for_each_flattened(0.01, &mut |line| {
-                        let y = line.from.y.min(line.to.y) as usize;
-                        self.height = self.height.max(line.from.y.max(line.to.y) as usize);
-                        self.edges_by_y[y].push(*line);
+                    segment.for_each_flattened(TOLERANCE, &mut |line| {
+                        let Some(line) = line.clipped_y(y_bounds.clone()) else {
+                            return;
+                        };
+
+                        let Some(edge) = Edge::new(line) else {
+                            return;
+                        };
+
+                        self.height = self.height.max(edge.y_range.end);
+                        self.edges_by_y[edge.y_range.start].push(edge);
                     })
-                }
-                lyon_path::Event::End { last, first, .. } => {
-                    let y = last.y.min(first.y) as usize;
-                    self.height = self.height.max(last.y.max(first.y) as usize);
-                    self.edges_by_y.resize_with(self.height, Vec::new);
-                    self.edges_by_y[y].push(LineSegment {
-                        from: last,
-                        to: first,
-                    });
                 }
             }
         }
 
         for y in 0..self.height {
-            if y >= out.height as usize {
+            if y / SCALE as usize >= out.height as usize {
                 break;
             }
 
-            self.current_edges
-                .retain(|edge| edge.from.y.max(edge.to.y) as usize >= y);
+            self.current_edges.retain(|edge| edge.y_range.end > y);
+            for edge in self.current_edges.iter_mut() {
+                edge.x += edge.dx;
+            }
             self.current_edges.append(&mut self.edges_by_y[y]);
-            self.current_edges
-                .sort_unstable_by(|l, r| l.from.x.min(r.to.x).total_cmp(&r.from.x.min(r.to.x)));
+            self.current_edges.sort_by(|l, r| l.x.total_cmp(&r.x));
 
             let mut winding = 0;
-            let mut edges = self.current_edges.iter().copied().peekable();
-            while let Some(edge) = edges.peek().copied() {
-                if edge.from.x.max(edge.to.x) >= 0. {
+            let mut left = 0;
+
+            for edge in self.current_edges.iter() {
+                if winding == 0 {
+                    left = edge.x.round() as usize;
+                }
+
+                if (left / SCALE as usize) >= out.width as usize {
                     break;
                 }
-                edges.next();
 
-                if edge.from.y != edge.to.y {
-                    winding += if edge.from.y < edge.to.y { 1 } else { -1 };
-                }
-            }
+                winding += if edge.positive_winding { 1 } else { -1 };
 
-            for edge in edges {
-                if winding != 0 {
-                    let width = out.width;
-                    let min_x = edge.from.x.min(edge.to.x).max(0.);
-                    let max_x = edge.from.x.max(edge.to.x).min((width - 1) as f32);
+                let right = edge.x.round();
+                if right >= 0. && winding == 0 {
+                    let l = left % SCALE as usize;
+                    let la = ALPHA_X_LUT[SCALE as usize - (l + 1)];
 
-                    if min_x as u32 >= width {
-                        break;
+                    let right = right as usize;
+                    let mut ra = ALPHA_X_LUT[right % SCALE as usize];
+
+                    let mut right = right / SCALE as usize;
+                    if right >= out.width as usize {
+                        right = out.width as usize - 1;
+                        ra = ALPHA_X_LUT[ALPHA_X_LUT.len() - 1];
                     }
+                    let left = left / SCALE as usize;
 
-                    let row = out.row_slice_mut(y);
-                    let segment = &mut row[min_x as usize..=max_x as usize];
-                    if segment.is_empty() {
-                        continue;
-                    }
+                    let row = out.row_slice_mut(y / SCALE as usize);
+                    let row = &mut row[left..=right];
 
-                    if segment.len() == 1 {
-                        segment[0] = (segment[0] + (max_x - min_x)).clamp(0., 1.);
-                        continue;
-                    }
-
-                    segment[0] = (segment[0] + min_x.fract()).min(1.);
-                    let last = segment.len() - 1;
-                    segment[last] = (segment[last] + max_x.fract()).min(11.);
-
-                    let min_y = edge.from.y.min(edge.to.y);
-                    let max_y = edge.from.y.max(edge.to.y);
-                    let y_cov = if min_y as usize == y {
-                        min_y.fract()
-                    } else if max_y as usize == y {
-                        max_y.fract()
+                    if row.len() == 1 {
+                        row[0] = (row[0] + ra - la).min(1.);
                     } else {
-                        1.
-                    };
-                    for point in &mut segment[1..last] {
-                        *point = (*point + y_cov).min(1.);
-                    }
-                }
+                        row[0] = (row[0] + la).min(1.);
+                        let right = row.len() - 1;
+                        row[right] = (row[right] + ra).min(1.);
 
-                if edge.from.y != edge.to.y {
-                    winding += if edge.from.y < edge.to.y { 1 } else { -1 };
+                        for dst in row[1..right].iter_mut() {
+                            *dst = (*dst + 1. / SCALE).min(1.);
+                        }
+                    }
                 }
             }
         }
@@ -350,13 +533,14 @@ impl BlendMode {
 }
 
 pub(crate) struct GradientStop {
-    offset: f32,
-    color: LinSrgba,
+    pub(crate) offset: f32,
+    pub(crate) color: LinSrgba,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub(crate) enum SampleMode {
     /// Keep sampling the max/min value when out of bounds.
+    #[default]
     Pad,
     /// Sample mod bounds.
     Repeat,
@@ -505,6 +689,8 @@ pub(crate) struct Canvas {
     rasterizer: Rasterizer,
 
     masks: Vec<ClipMask>,
+    old_masks: Vec<ClipMask>,
+
     last_mask: ClipMask,
 }
 
@@ -519,6 +705,7 @@ impl Canvas {
             old_layers: vec![],
             rasterizer: Rasterizer::default(),
             masks: vec![],
+            old_masks: vec![],
             last_mask: ClipMask::new_unmasked(width, height),
         }
     }
@@ -628,10 +815,10 @@ impl Canvas {
             }
             Shader::SweepGradient {
                 stops,
-                center,
                 start,
                 end,
                 mode,
+                ..
             } => {
                 fill_with_sweep_gradient(
                     stops,
@@ -672,7 +859,8 @@ impl Canvas {
     }
 
     pub(crate) fn push_clip(&mut self, path: &Path) {
-        let mut mask = ClipMask::new(self.width, self.height);
+        let mut mask = self.old_masks.pop().unwrap_or_default();
+        mask.re_use(self.width, self.height);
 
         self.rasterizer.rasterize_path(path, &mut mask);
         if let Some(last) = self.masks.last() {
@@ -683,8 +871,33 @@ impl Canvas {
         self.masks.push(mask);
     }
 
+    pub(crate) fn push_clip_rect(&mut self, rect: Box2D) {
+        // Box2D::to_u32 panics if the point isn't in bounds for u32. We don't care
+        // about truncating here, so we just do the cast directly.
+        let mut rect = geom::Box2D::new(
+            geom::Point::new(rect.min.x as u32, rect.min.y as u32),
+            geom::Point::new(rect.max.x as u32, rect.max.y as u32),
+        );
+        rect.min = rect.min.min((self.width, self.height).into());
+        rect.max = rect.max.min((self.width, self.height).into());
+
+        let mut mask = self.old_masks.pop().unwrap_or_default();
+        mask.re_use(self.width, self.height);
+
+        for y in rect.min.y..rect.max.y {
+            let row = mask.row_slice_mut(y as usize);
+            let row = &mut row[rect.min.x as usize..rect.max.x as usize];
+            row.fill(1.);
+        }
+        self.masks.push(mask);
+    }
+
     pub(crate) fn pop_clip(&mut self) {
-        self.masks.pop();
+        if let Some(mask) = self.masks.pop() {
+            self.old_masks.push(mask);
+        } else {
+            warn!("pop_clip called without an active mask");
+        }
     }
 }
 
@@ -717,6 +930,19 @@ fn build_gradient_lut(stops: &[GradientStop]) -> Lut {
     for prev_cur in stops.windows(2) {
         let prev = &prev_cur[0];
         let cur = &prev_cur[1];
+
+        if prev.offset == cur.offset {
+            // https://learn.microsoft.com/en-us/typography/opentype/spec/colr#color-lines
+            // "If there are multiple color stops defined for the same stop
+            // offset, the first one given in the font must be used for
+            // computing color values on the color line below that stop offset,
+            // and the last one must be used for computing color values at or
+            // above that stop offset"
+            let idx = (prev.offset * 255.) as u8 as usize;
+            lut[idx] = Rgba::from_linear(cur.color);
+            continue;
+        }
+
         let prev_idx = (prev.offset * 255.) as u8;
         let cur_idx = (cur.offset * 255.) as u8;
 
@@ -818,6 +1044,7 @@ fn fill_with_linear_gradient(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fill_with_conical_gradient(
     stops: &[GradientStop],
     points: &[Point],
@@ -909,6 +1136,7 @@ fn get_conical_sample_point(
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fill_with_sweep_gradient(
     stops: &[GradientStop],
     points: &[Point],
@@ -943,5 +1171,342 @@ fn fill_with_sweep_gradient(
         let mut color = lut[sample_fn(Point::new(t, 0.), 256, 1).x as u8 as usize];
         color.alpha *= mask;
         *dst = blend_fn(*dst, color);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use lyon_path::{
+        math::{
+            Box2D,
+            Point,
+            Transform,
+            Vector,
+        },
+        Path,
+    };
+    use palette::Srgba;
+
+    use crate::{
+        graphics::{
+            Canvas,
+            Image,
+        },
+        utils::Outline,
+        Font,
+    };
+
+    #[test]
+    fn clip_box() {
+        let mut canvas = Canvas::new(5, 5);
+        canvas.push_clip_rect(Box2D::new(Point::new(1., 1.), Point::new(4., 4.)));
+
+        assert_eq!(
+            canvas.masks.last().unwrap().data,
+            vec![
+                0., 0., 0., 0., 0., //
+                0., 1., 1., 1., 0., //
+                0., 1., 1., 1., 0., //
+                0., 1., 1., 1., 0., //
+                0., 0., 0., 0., 0., //
+            ]
+        )
+    }
+
+    #[test]
+    fn clip_line() {
+        let mut canvas = Canvas::new(5, 5);
+        let mut path = Path::builder();
+        path.add_rectangle(
+            &Box2D::new(Point::new(1., 1.), Point::new(2., 4.)),
+            lyon_path::Winding::Positive,
+        );
+        canvas.push_clip(&path.build());
+
+        assert_eq!(
+            canvas.masks.last().unwrap().data,
+            vec![
+                0., 0., 0., 0., 0., //
+                0., 1., 0., 0., 0., //
+                0., 1., 0., 0., 0., //
+                0., 1., 0., 0., 0., //
+                0., 0., 0., 0., 0., //
+            ]
+        )
+    }
+
+    #[test]
+    fn clip_line_horizontal() {
+        let mut canvas = Canvas::new(5, 5);
+        let mut path = Path::builder();
+        path.add_rectangle(
+            &Box2D::new(Point::new(1., 1.), Point::new(4., 2.)),
+            lyon_path::Winding::Positive,
+        );
+        canvas.push_clip(&path.build());
+
+        assert_eq!(
+            canvas.masks.last().unwrap().data,
+            vec![
+                0., 0., 0., 0., 0., //
+                0., 1., 1., 1., 0., //
+                0., 0., 0., 0., 0., //
+                0., 0., 0., 0., 0., //
+                0., 0., 0., 0., 0., //
+            ]
+        )
+    }
+
+    #[test]
+    fn clip_line_2seg_horizontal() {
+        let mut canvas = Canvas::new(5, 5);
+        let mut path = Path::builder();
+        path.begin(Point::splat(1.));
+        path.line_to(Point::new(3., 1.));
+        path.line_to(Point::new(4., 1.));
+        path.line_to(Point::new(4., 2.));
+        path.line_to(Point::new(1., 2.));
+        path.close();
+        canvas.push_clip(&path.build());
+
+        assert_eq!(
+            canvas.masks.last().unwrap().data,
+            vec![
+                0., 0., 0., 0., 0., //
+                0., 1., 1., 1., 0., //
+                0., 0., 0., 0., 0., //
+                0., 0., 0., 0., 0., //
+                0., 0., 0., 0., 0., //
+            ]
+        )
+    }
+
+    #[test]
+    fn clip_circle() {
+        let mut canvas = Canvas::new(32, 32);
+        let mut path = Path::builder();
+        path.add_circle(Point::splat(16.), 8., lyon_path::Winding::Positive);
+        canvas.push_clip(&path.build());
+
+        let mask = canvas.masks.last().unwrap();
+        let (data, width, height) =
+            Image::load_from_memory(include_bytes!("goldens/clip_circle.png")).unwrap();
+
+        assert_eq!(mask.width, width);
+        assert_eq!(mask.height, height);
+        for (m, d) in mask.to_color().iter().zip(data.iter()) {
+            // This just gets rid of fp rounding issues.
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn clip_2() {
+        let mut canvas = Canvas::new(32, 32);
+        let font = Font::new(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/backend/fonts/CascadiaMono-Regular.ttf"
+        )))
+        .expect("Invalid font file");
+        let mut outline = Outline::default();
+
+        const HEIGHT: f32 = 24.;
+
+        let glyph = font.font().glyph_index('2').expect("No glyph for 2");
+        font.font()
+            .outline_glyph(glyph, &mut outline)
+            .expect("Invalid glyph for 2");
+
+        let scale = HEIGHT / font.font().height() as f32;
+        let transform = Transform::scale(scale, -scale)
+            .then_translate(Vector::new(0., font.font().ascender() as f32 * scale));
+        let path = outline.finish().transformed(&transform);
+
+        canvas.push_clip(&path);
+
+        let mask = canvas.masks.last().unwrap();
+        let (data, width, height) =
+            Image::load_from_memory(include_bytes!("goldens/clip_2.png")).unwrap();
+
+        assert_eq!(mask.width, width);
+        assert_eq!(mask.height, height);
+        for (m, d) in mask.to_color().iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn clip_0_l() {
+        let mut canvas = Canvas::new(32, 32);
+        let font = Font::new(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/backend/fonts/CascadiaMono-Regular.ttf"
+        )))
+        .expect("Invalid font file");
+        let mut outline = Outline::default();
+
+        const HEIGHT: f32 = 24.;
+
+        let glyph = font.font().glyph_index('0').expect("No glyph for 0");
+        font.font()
+            .outline_glyph(glyph, &mut outline)
+            .expect("Invalid glyph for 0");
+
+        let scale = HEIGHT / font.font().height() as f32;
+        let transform = Transform::scale(scale, -scale)
+            .then_translate(Vector::new(-8., font.font().ascender() as f32 * scale));
+        let path = outline.finish().transformed(&transform);
+
+        canvas.push_clip(&path);
+
+        let mask = canvas.masks.last().unwrap();
+        let (data, width, height) =
+            Image::load_from_memory(include_bytes!("goldens/clip_0_l.png")).unwrap();
+
+        assert_eq!(mask.width, width);
+        assert_eq!(mask.height, height);
+        for (m, d) in mask.to_color().iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn clip_0_r() {
+        let mut canvas = Canvas::new(32, 32);
+        let font = Font::new(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/backend/fonts/CascadiaMono-Regular.ttf"
+        )))
+        .expect("Invalid font file");
+        let mut outline = Outline::default();
+
+        const HEIGHT: f32 = 24.;
+
+        let glyph = font.font().glyph_index('0').expect("No glyph for 0");
+        font.font()
+            .outline_glyph(glyph, &mut outline)
+            .expect("Invalid glyph for 0");
+
+        let scale = HEIGHT / font.font().height() as f32;
+        let transform = Transform::scale(scale, -scale)
+            .then_translate(Vector::new(24., font.font().ascender() as f32 * scale));
+        let path = outline.finish().transformed(&transform);
+
+        canvas.push_clip(&path);
+
+        let mask = canvas.masks.last().unwrap();
+        let (data, width, height) =
+            Image::load_from_memory(include_bytes!("goldens/clip_0_r.png")).unwrap();
+
+        assert_eq!(mask.width, width);
+        assert_eq!(mask.height, height);
+        for (m, d) in mask.to_color().iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn clip_dash() {
+        let mut canvas = Canvas::new(32, 32);
+        let font = Font::new(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/backend/fonts/CascadiaMono-Regular.ttf"
+        )))
+        .expect("Invalid font file");
+        let mut outline = Outline::default();
+
+        const HEIGHT: f32 = 24.;
+
+        let glyph = font.font().glyph_index('─').expect("No glyph for ─");
+        font.font()
+            .outline_glyph(glyph, &mut outline)
+            .expect("Invalid glyph for ─");
+
+        let scale = HEIGHT / font.font().height() as f32;
+        let transform = Transform::scale(scale, -scale)
+            .then_translate(Vector::new(0., font.font().ascender() as f32 * scale));
+        let path = outline.finish().transformed(&transform);
+
+        canvas.push_clip(&path);
+
+        let mask = canvas.masks.last().unwrap();
+        let (data, width, height) =
+            Image::load_from_memory(include_bytes!("goldens/clip_dash.png")).unwrap();
+
+        assert_eq!(mask.width, width);
+        assert_eq!(mask.height, height);
+        for (m, d) in mask.to_color().iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn clip_w() {
+        let mut canvas = Canvas::new(32, 32);
+        let font = Font::new(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/backend/fonts/CascadiaMono-Regular.ttf"
+        )))
+        .expect("Invalid font file");
+        let mut outline = Outline::default();
+
+        const HEIGHT: f32 = 24.;
+
+        let glyph = font.font().glyph_index('w').expect("No glyph for w");
+        font.font()
+            .outline_glyph(glyph, &mut outline)
+            .expect("Invalid glyph for w");
+
+        let scale = HEIGHT / font.font().height() as f32;
+        let transform = Transform::scale(scale, -scale)
+            .then_translate(Vector::new(0., font.font().ascender() as f32 * scale));
+        let path = outline.finish().transformed(&transform);
+
+        canvas.push_clip(&path);
+
+        let mask = canvas.masks.last().unwrap();
+        let (data, width, height) =
+            Image::load_from_memory(include_bytes!("goldens/clip_w.png")).unwrap();
+
+        assert_eq!(mask.width, width);
+        assert_eq!(mask.height, height);
+        for (m, d) in mask.to_color().iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn clip_wide_h() {
+        let mut canvas = Canvas::new(32, 32);
+        let font = Font::new(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/backend/fonts/Fairfax.ttf"
+        )))
+        .expect("Invalid font file");
+        let mut outline = Outline::default();
+
+        const HEIGHT: f32 = 24.;
+
+        let glyph = font.font().glyph_index('Ｈ').expect("No glyph for Ｈ");
+        font.font()
+            .outline_glyph(glyph, &mut outline)
+            .expect("Invalid glyph for Ｈ");
+
+        let scale = HEIGHT / font.font().height() as f32;
+        let transform = Transform::scale(scale, -scale)
+            .then_translate(Vector::new(0., font.font().ascender() as f32 * scale));
+        let path = outline.finish().transformed(&transform);
+
+        canvas.push_clip(&path);
+
+        let mask = canvas.masks.last().unwrap();
+        let (data, width, height) =
+            Image::load_from_memory(include_bytes!("goldens/clip_wide_h.png")).unwrap();
+
+        assert_eq!(mask.width, width);
+        assert_eq!(mask.height, height);
+        for (m, d) in mask.to_color().iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
     }
 }

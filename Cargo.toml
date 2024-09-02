@@ -32,7 +32,6 @@ indexmap           = { version = "2.4.0", default-features = false, features = [
 log                = { version = "0.4.22", default-features = false }
 lyon_path          = "1.0.5"
 palette            = { version = "0.7.6", default-features = false, features = [ "std" ] }
-raqote             = { version = "0.8.4", default-features = false }
 ratatui            = { version = "0.28.0", default-features = false }
 rustybuzz          = "0.18.0"
 thiserror          = "1.0.63"
@@ -51,10 +50,9 @@ crossbeam-queue          = "0.3.11"
 env_logger               = "0.11.5"
 fontdb                   = "0.21.0"
 futures-lite             = "2.3.0"
-image                    = { version = "0.25.2", default-features = false, features = [ "png" ] }
 js-sys                   = "0.3.70"
 oneshot                  = "0.1.8"
-palette                  = "0.7.6"
+png                      = "0.17.13"
 serial_test              = "3.1.1"
 wasm-bindgen             = "0.2"
 wasm-bindgen-futures     = "0.4.42"

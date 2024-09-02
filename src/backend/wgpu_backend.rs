@@ -10,13 +10,8 @@ use std::{
 
 use bitvec::vec::BitVec;
 use indexmap::IndexMap;
-use raqote::{
-    DrawOptions,
-    DrawTarget,
-    SolidSource,
-    StrokeStyle,
-    Transform,
-};
+use lyon_path::math::Transform;
+use palette::rgb::Rgba;
 use ratatui::{
     backend::{
         Backend,
@@ -101,6 +96,11 @@ use crate::{
     fonts::{
         Font,
         Fonts,
+    },
+    graphics::{
+        BlendMode,
+        Canvas,
+        Shader,
     },
     shaders::DefaultPostProcessor,
     utils::{
@@ -187,6 +187,7 @@ pub struct WgpuBackend<
     pub(super) fonts: Fonts<'f>,
     pub(super) reset_fg: Rgb,
     pub(super) reset_bg: Rgb,
+    pub(super) canvas: Canvas,
 
     pub(super) fast_duration: Duration,
     pub(super) last_fast_toggle: Instant,
@@ -666,6 +667,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                             && !matches!(ch.general_category_group(), GeneralCategoryGroup::Number);
 
                         let (rect, image) = rasterize_glyph(
+                            &mut self.canvas,
                             cached,
                             metrics,
                             info,
@@ -993,7 +995,9 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rasterize_glyph(
+    canvas: &mut Canvas,
     cached: Entry,
     metrics: &rustybuzz::Face,
     info: &rustybuzz::GlyphInfo,
@@ -1002,10 +1006,12 @@ fn rasterize_glyph(
     advance_scale: f32,
     actual_width: u32,
 ) -> (CacheRect, Vec<u32>) {
+    canvas.reset(cached.width, cached.height);
+
     let scale = cached.width as f32 / actual_width as f32;
     let computed_offset_x = -(cached.width as f32 * (1.0 - scale));
     let computed_offset_y = cached.height as f32 * (1.0 - scale);
-    let scale = scale * advance_scale * 2.0;
+    let scale = scale * advance_scale;
 
     let skew = if fake_italic {
         Transform::new(
@@ -1020,16 +1026,9 @@ fn rasterize_glyph(
         Transform::default()
     };
 
-    let mut image = vec![0u32; cached.width as usize * 2 * cached.height as usize * 2];
-    let mut target = DrawTarget::from_backing(
-        cached.width as i32 * 2,
-        cached.height as i32 * 2,
-        &mut image[..],
-    );
-
     let mut painter = Painter::new(
         metrics,
-        &mut target,
+        canvas,
         skew,
         scale,
         metrics.ascender() as f32 * scale + computed_offset_y,
@@ -1044,31 +1043,7 @@ fn rasterize_glyph(
         )
         .is_some()
     {
-        let mut final_image = DrawTarget::new(cached.width as i32, cached.height as i32);
-        final_image.draw_image_with_size_at(
-            cached.width as f32,
-            cached.height as f32,
-            0.,
-            0.,
-            &raqote::Image {
-                width: cached.width as i32 * 2,
-                height: cached.height as i32 * 2,
-                data: &image,
-            },
-            &DrawOptions {
-                blend_mode: raqote::BlendMode::Src,
-                antialias: raqote::AntialiasMode::None,
-                ..Default::default()
-            },
-        );
-
-        let mut final_image = final_image.into_vec();
-        for argb in final_image.iter_mut() {
-            let [a, r, g, b] = argb.to_be_bytes();
-            *argb = u32::from_le_bytes([r, g, b, a]);
-        }
-
-        return (*cached, final_image);
+        return (*cached, canvas.pack_result());
     }
 
     let mut render = Outline::default();
@@ -1086,49 +1061,20 @@ fn rasterize_glyph(
         let x_off = x_off * scale + computed_offset_x;
         let y_off = metrics.ascender() as f32 * scale + computed_offset_y;
 
-        target.set_transform(
+        let path = path.transformed(
             &Transform::scale(scale, -scale)
                 .then(&skew)
                 .then_translate((x_off, y_off).into()),
         );
 
-        target.fill(
-            &path,
-            &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
-            &DrawOptions::default(),
-        );
+        if fake_bold { /* TODO, fake the bold on the path */ }
 
-        if fake_bold {
-            target.stroke(
-                &path,
-                &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
-                &StrokeStyle {
-                    width: 1.5,
-                    ..Default::default()
-                },
-                &DrawOptions::new(),
-            );
-        }
+        canvas.push_clip(&path);
+        let shader = Shader::Solid(Rgba::new(1., 1., 1., 1.));
 
-        let mut final_image = DrawTarget::new(cached.width as i32, cached.height as i32);
-        final_image.draw_image_with_size_at(
-            cached.width as f32,
-            cached.height as f32,
-            0.,
-            0.,
-            &raqote::Image {
-                width: cached.width as i32 * 2,
-                height: cached.height as i32 * 2,
-                data: &image,
-            },
-            &DrawOptions {
-                blend_mode: raqote::BlendMode::Src,
-                antialias: raqote::AntialiasMode::None,
-                ..Default::default()
-            },
-        );
+        canvas.fill(&shader, BlendMode::default(), Transform::default());
 
-        return (*cached, final_image.into_vec());
+        return (*cached, canvas.pack_result());
     }
 
     (
@@ -1141,12 +1087,6 @@ fn rasterize_glyph(
 mod tests {
     use std::num::NonZeroU32;
 
-    use image::{
-        load_from_memory,
-        GenericImageView,
-        ImageBuffer,
-        Rgba,
-    };
     use ratatui::{
         style::Stylize,
         text::Line,
@@ -1168,6 +1108,7 @@ mod tests {
 
     use crate::{
         backend::HeadlessSurface,
+        graphics::Image,
         shaders::DefaultPostProcessor,
         Builder,
         Font,
@@ -1197,13 +1138,19 @@ mod tests {
     #[test]
     #[serial]
     fn a_z() {
+        const HEIGHT: u32 = 72;
+        const WIDTH: u32 = 512;
+
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .with_dimensions(
+                    NonZeroU32::new(HEIGHT).unwrap(),
+                    NonZeroU32::new(WIDTH).unwrap(),
+                )
                 .build_headless(),
             )
             .unwrap(),
@@ -1236,17 +1183,12 @@ mod tests {
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
-            let image =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+            let data = Image::from_raw(&data);
 
-            let pixels = image.pixels().copied().collect::<Vec<_>>();
-            let golden = load_from_memory(include_bytes!("goldens/a_z.png")).unwrap();
-            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/a_z.png")).unwrap();
 
-            assert!(
-                pixels == golden_pixels,
-                "Rendered image differs from golden"
-            );
+            assert!(data == golden, "Rendered image differs from golden");
         }
 
         surface.buffer.as_ref().unwrap().unmap();
@@ -1255,13 +1197,18 @@ mod tests {
     #[test]
     #[serial]
     fn arabic() {
+        const WIDTH: u32 = 256;
+        const HEIGHT: u32 = 72;
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_dimensions(
+                    NonZeroU32::new(HEIGHT).unwrap(),
+                    NonZeroU32::new(WIDTH).unwrap(),
+                )
                 .build_headless(),
             )
             .unwrap(),
@@ -1294,17 +1241,12 @@ mod tests {
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
-            let image =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+            let data = Image::from_raw(&data);
 
-            let pixels = image.pixels().copied().collect::<Vec<_>>();
-            let golden = load_from_memory(include_bytes!("goldens/arabic.png")).unwrap();
-            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/arabic.png")).unwrap();
 
-            assert!(
-                pixels == golden_pixels,
-                "Rendered image differs from golden"
-            );
+            assert!(data == golden, "Rendered image differs from golden");
         }
 
         surface.buffer.as_ref().unwrap().unmap();
@@ -1313,12 +1255,18 @@ mod tests {
     #[test]
     #[serial]
     fn really_wide() {
+        const HEIGHT: u32 = 72;
+        const WIDTH: u32 = 512;
+
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .with_dimensions(
+                    NonZeroU32::new(HEIGHT).unwrap(),
+                    NonZeroU32::new(WIDTH).unwrap(),
+                )
                 .build_headless(),
             )
             .unwrap(),
@@ -1351,17 +1299,12 @@ mod tests {
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
-            let image =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+            let data = Image::from_raw(&data);
 
-            let pixels = image.pixels().copied().collect::<Vec<_>>();
-            let golden = load_from_memory(include_bytes!("goldens/really_wide.png")).unwrap();
-            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/really_wide.png")).unwrap();
 
-            assert!(
-                pixels == golden_pixels,
-                "Rendered image differs from golden"
-            );
+            assert!(data == golden, "Rendered image differs from golden");
         }
 
         surface.buffer.as_ref().unwrap().unmap();
@@ -1370,13 +1313,19 @@ mod tests {
     #[test]
     #[serial]
     fn mixed() {
+        const HEIGHT: u32 = 72;
+        const WIDTH: u32 = 512;
+
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .with_dimensions(
+                    NonZeroU32::new(HEIGHT).unwrap(),
+                    NonZeroU32::new(WIDTH).unwrap(),
+                )
                 .build_headless(),
             )
             .unwrap(),
@@ -1412,17 +1361,12 @@ mod tests {
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
-            let image =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+            let data = Image::from_raw(&data);
 
-            let pixels = image.pixels().copied().collect::<Vec<_>>();
-            let golden = load_from_memory(include_bytes!("goldens/mixed.png")).unwrap();
-            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/mixed.png")).unwrap();
 
-            assert!(
-                pixels == golden_pixels,
-                "Rendered image differs from golden"
-            );
+            assert!(data == golden, "Rendered image differs from golden");
         }
 
         surface.buffer.as_ref().unwrap().unmap();
@@ -1431,13 +1375,18 @@ mod tests {
     #[test]
     #[serial]
     fn mixed_colors() {
+        const HEIGHT: u32 = 72;
+        const WIDTH: u32 = 512;
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .with_dimensions(
+                    NonZeroU32::new(HEIGHT).unwrap(),
+                    NonZeroU32::new(WIDTH).unwrap(),
+                )
                 .build_headless(),
             )
             .unwrap(),
@@ -1477,17 +1426,12 @@ mod tests {
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
-            let image =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+            let data = Image::from_raw(&data);
 
-            let pixels = image.pixels().copied().collect::<Vec<_>>();
-            let golden = load_from_memory(include_bytes!("goldens/mixed_colors.png")).unwrap();
-            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/mixed_colors.png")).unwrap();
 
-            assert!(
-                pixels == golden_pixels,
-                "Rendered image differs from golden"
-            );
+            assert!(data == golden, "Rendered image differs from golden");
         }
 
         surface.buffer.as_ref().unwrap().unmap();
@@ -1496,12 +1440,17 @@ mod tests {
     #[test]
     #[serial]
     fn overlap() {
+        const HEIGHT: u32 = 72;
+        const WIDTH: u32 = 256;
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_dimensions(
+                    NonZeroU32::new(HEIGHT).unwrap(),
+                    NonZeroU32::new(WIDTH).unwrap(),
+                )
                 .build_headless(),
             )
             .unwrap(),
@@ -1534,17 +1483,12 @@ mod tests {
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
-            let image =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+            let data = Image::from_raw(&data);
 
-            let pixels = image.pixels().copied().collect::<Vec<_>>();
-            let golden = load_from_memory(include_bytes!("goldens/overlap_initial.png")).unwrap();
-            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/overlap_initial.png")).unwrap();
 
-            assert!(
-                pixels == golden_pixels,
-                "Rendered image differs from golden"
-            );
+            assert!(data == golden, "Rendered image differs from golden");
         }
         surface.buffer.as_ref().unwrap().unmap();
 
@@ -1574,17 +1518,12 @@ mod tests {
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
-            let image =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+            let data = Image::from_raw(&data);
 
-            let pixels = image.pixels().copied().collect::<Vec<_>>();
-            let golden = load_from_memory(include_bytes!("goldens/overlap_post.png")).unwrap();
-            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/overlap_post.png")).unwrap();
 
-            assert!(
-                pixels == golden_pixels,
-                "Rendered image differs from golden"
-            );
+            assert!(data == golden, "Rendered image differs from golden");
         }
 
         surface.buffer.as_ref().unwrap().unmap();
@@ -1593,12 +1532,18 @@ mod tests {
     #[test]
     #[serial]
     fn overlap_colors() {
+        const HEIGHT: u32 = 72;
+        const WIDTH: u32 = 256;
+
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_dimensions(
+                    NonZeroU32::new(HEIGHT).unwrap(),
+                    NonZeroU32::new(WIDTH).unwrap(),
+                )
                 .build_headless(),
             )
             .unwrap(),
@@ -1631,17 +1576,12 @@ mod tests {
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
-            let image =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+            let data = Image::from_raw(&data);
 
-            let pixels = image.pixels().copied().collect::<Vec<_>>();
-            let golden = load_from_memory(include_bytes!("goldens/overlap_colors.png")).unwrap();
-            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/overlap_colors.png")).unwrap();
 
-            assert!(
-                pixels == golden_pixels,
-                "Rendered image differs from golden"
-            );
+            assert!(data == golden, "Rendered image differs from golden");
         }
         surface.buffer.as_ref().unwrap().unmap();
     }
