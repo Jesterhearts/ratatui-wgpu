@@ -116,7 +116,7 @@ impl<'f, 'd, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd> {
     fn outline_glyph(&mut self, glyph_id: rustybuzz::ttf_parser::GlyphId) {
         let mut outline = Outline::default();
         if self.font.outline_glyph(glyph_id, &mut outline).is_some() {
-            self.outline = outline.finish();
+            self.outline = outline.finish().transformed(&self.compute_transform());
         }
     }
 
@@ -160,9 +160,8 @@ impl<'f, 'd, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd> {
                 let perp = Vector::new(dist.y, -dist.x);
 
                 // Project the vector p0p1 onto the perpendicular line passing through p0
-                // https://en.wikipedia.org/wiki/Vector_projection#Vector_projection_2
                 let dist = p1 - p0;
-                let p3 = p0 + perp * (dist.dot(perp) / perp.length().powi(2));
+                let p3 = p0 + dist.project_onto_vector(perp);
 
                 Shader::LinearGradient {
                     stops,

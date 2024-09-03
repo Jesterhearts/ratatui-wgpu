@@ -1009,8 +1009,8 @@ fn rasterize_glyph(
     canvas.reset(cached.width, cached.height);
 
     let scale = cached.width as f32 / actual_width as f32;
-    let computed_offset_x = -(cached.width as f32 * (1.0 - scale));
-    let computed_offset_y = cached.height as f32 * (1.0 - scale);
+    let computed_offset_x = -(cached.width as f32 * (1.0 - scale)) / 2.0;
+    let computed_offset_y = cached.height as f32 * (1.0 - scale) / 2.0;
     let scale = scale * advance_scale;
 
     let skew = if fake_italic {

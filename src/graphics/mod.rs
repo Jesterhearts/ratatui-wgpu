@@ -1,7 +1,4 @@
-use std::{
-    f32::consts::PI,
-    ops::Range,
-};
+use std::ops::Range;
 
 use lyon_path::{
     geom::{
@@ -25,7 +22,7 @@ use palette::{
         Compose,
     },
     rgb::{
-        PackedRgba,
+        PackedAbgr,
         Rgba,
     },
     FromColor,
@@ -51,6 +48,7 @@ const ALPHA_X_LUT: [f32; SCALE as usize] = [
 
 type Lut = [Rgba; 256];
 
+#[derive(Debug)]
 pub(crate) struct Image<'d> {
     data: &'d mut [Rgba],
     width: u32,
@@ -88,10 +86,7 @@ impl<'d> Image<'d> {
     ) -> std::io::Result<()> {
         use std::fs::File;
 
-        use palette::{
-            rgb::PackedArgb,
-            Srgba,
-        };
+        use palette::Srgba;
         use png::Encoder;
 
         let file = File::create(path)?;
@@ -101,7 +96,7 @@ impl<'d> Image<'d> {
         let mut writer = writer.write_header()?;
         let data = data
             .iter()
-            .map(|c| PackedArgb::pack(Srgba::<u8>::from_format(*c)).color)
+            .map(|c| PackedAbgr::pack(Srgba::<u8>::from_format(*c)).color)
             .collect::<Vec<u32>>();
         writer.write_image_data(bytemuck::cast_slice(&data))?;
 
@@ -111,7 +106,7 @@ impl<'d> Image<'d> {
     #[cfg(test)]
     pub(crate) fn from_raw(bytes: &[u8]) -> Vec<Rgba> {
         use palette::{
-            rgb::PackedArgb,
+            rgb::PackedAbgr,
             Srgba,
         };
 
@@ -119,7 +114,7 @@ impl<'d> Image<'d> {
 
         data.iter()
             .copied()
-            .map(|d| Srgba::<u8>::from(PackedArgb::from(d).unpack()).into_format())
+            .map(|d| Srgba::<u8>::from(PackedAbgr::from(d).unpack()).into_format())
             .collect()
     }
 
@@ -479,7 +474,7 @@ pub(crate) enum BlendMode {
 impl BlendMode {
     fn blend_fn(&self) -> fn(dest: Rgba, source: Rgba) -> Rgba {
         match self {
-            BlendMode::Clear => |_, _| Rgba::default(),
+            BlendMode::Clear => |_, _| Rgba::new(0., 0., 0., 0.),
             BlendMode::Source => |_, src| src,
             BlendMode::Destination => |dst, _| dst,
             BlendMode::SourceOver => |dst, src| src.over(dst),
@@ -532,6 +527,7 @@ impl BlendMode {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct GradientStop {
     pub(crate) offset: f32,
     pub(crate) color: LinSrgba,
@@ -591,6 +587,7 @@ impl SampleMode {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum Shader<'d> {
     Solid(Rgba),
     Image {
@@ -632,7 +629,7 @@ impl Shader<'_> {
                 }
                 // We want a transform so that all incomming points align along the x axis in
                 // the range 0..1
-                let dist = *start - *end;
+                let dist = *end - *start;
 
                 let length = dist.length();
                 let dist = dist.normalize();
@@ -640,7 +637,7 @@ impl Shader<'_> {
                 // Translate the point to align with the start
                 Transform::translation(-start.x, -start.y)
                     // Rotate all the points so that they line up
-                    .then_rotate(-dist.angle_from_x_axis())
+                    .then(&Transform::new(dist.x, -dist.y, dist.y, dist.x, 0., 0.))
                     // Scale to be in range 0..1
                     .then_scale(1. / length, 1. / length)
             }
@@ -649,6 +646,8 @@ impl Shader<'_> {
                 // We just want to align all our points to the center location. The math in the
                 // gradient takes care of translating to a linear value on 0..1
                 Transform::translation(-center.x, -center.y)
+                    // We have postive y down, so flip the points.
+                    .then_scale(1., -1.)
             }
         }
     }
@@ -665,7 +664,7 @@ struct Layer {
 impl Layer {
     fn re_use(&mut self, width: u32, height: u32, blend: BlendMode) {
         self.data
-            .resize(width as usize * height as usize, Rgba::default());
+            .resize(width as usize * height as usize, Rgba::new(0., 0., 0., 0.));
         self.width = width;
         self.height = height;
         self.blend = blend;
@@ -697,7 +696,7 @@ pub(crate) struct Canvas {
 impl Canvas {
     pub(crate) fn new(width: u32, height: u32) -> Self {
         Self {
-            result: vec![Rgba::default(); width as usize * height as usize],
+            result: vec![Rgba::new(0., 0., 0., 0.); width as usize * height as usize],
             height,
             width,
             points: vec![Point::zero(); width as usize * height as usize],
@@ -717,7 +716,7 @@ impl Canvas {
 
         let mut out = vec![0; self.result.len()];
         for (dst, color) in out.iter_mut().zip(self.result.iter()) {
-            *dst = PackedRgba::from(color.into_format()).color;
+            *dst = PackedAbgr::from(color.into_format()).color;
         }
 
         out
@@ -729,7 +728,7 @@ impl Canvas {
 
         self.result.clear();
         self.result
-            .resize(width as usize * height as usize, Rgba::default());
+            .resize(width as usize * height as usize, Rgba::new(0., 0., 0., 0.));
 
         self.points.clear();
         self.points
@@ -904,7 +903,7 @@ impl Canvas {
 fn build_gradient_lut(stops: &[GradientStop]) -> Lut {
     // This function lerps using **linear** rgb values.
     // https://learn.microsoft.com/en-us/typography/opentype/spec/cpal#interpolation-of-colors
-    let mut lut = [Rgba::default(); 256];
+    let mut lut = [Rgba::new(0., 0., 0., 0.); 256];
 
     if stops.is_empty() {
         // There's nothing sane to do here, so just create a table that always returns
@@ -923,7 +922,10 @@ fn build_gradient_lut(stops: &[GradientStop]) -> Lut {
     // the first offset, because our windows below use the first element in the
     // window to check the previously set color, so we want to advance one into to
     // list of stops.
-    for lut in lut.iter_mut().take((first.offset * 255.) as u8 as usize) {
+    for lut in lut
+        .iter_mut()
+        .take((first.offset * 255.) as u8 as usize + 1)
+    {
         *lut = Rgba::from_linear(first.color);
     }
 
@@ -945,12 +947,6 @@ fn build_gradient_lut(stops: &[GradientStop]) -> Lut {
 
         let prev_idx = (prev.offset * 255.) as u8;
         let cur_idx = (cur.offset * 255.) as u8;
-
-        if cur_idx == 255 {
-            // We ignore idx == 255, because we'll always overwrite the last
-            // slot in the table during the last step of building the lut.
-            break;
-        }
 
         // We assume that the input stops are in sorted order, so check that here.
         debug_assert!(prev_idx <= cur_idx, "Input stops not sorted");
@@ -1037,7 +1033,8 @@ fn fill_with_linear_gradient(
     {
         // Remember that when we created our transform for the gradient shader, we
         // applied a rotation so that the gradient is always aligned along the x axis.
-        let offset = sampler(point, 256, 1).x;
+        let offset = sampler(point * 255., 256, 1).x;
+
         let mut color = lut[offset as u8 as usize];
         color.alpha *= mask;
         *dst = blend_fn(*dst, color);
@@ -1089,9 +1086,9 @@ fn fill_with_conical_gradient(
 
         let mut color =
             if let Some(point) = get_conical_sample_point(a, b, c, delta_radi, min_delta_radi) {
-                lut[sample_fn(Point::new(point, 0.), 256, 1).x as u8 as usize]
+                lut[sample_fn(Point::new(point * 255., 0.), 256, 1).x as u8 as usize]
             } else {
-                Rgba::default()
+                Rgba::new(0., 0., 0., 0.)
             };
         color.alpha *= mask;
         *dst = blend_fn(*dst, color);
@@ -1150,14 +1147,8 @@ fn fill_with_sweep_gradient(
     let lut = build_gradient_lut(stops);
     let sample_fn = mode.sample_fn();
 
-    let start = start.positive().radians;
-    let end = end.positive().radians;
-
-    let offset = -start;
-
-    let start = start / (2. * PI);
-    let end = end / (2. * PI);
-    let scale = 1. / (end - start);
+    let start = start.radians;
+    let end = end.radians;
 
     for ((dst, mask), point) in dst
         .data
@@ -1167,8 +1158,8 @@ fn fill_with_sweep_gradient(
     {
         let angle = point.to_vector().angle_from_x_axis().positive();
 
-        let t = (angle.radians * scale) + offset;
-        let mut color = lut[sample_fn(Point::new(t, 0.), 256, 1).x as u8 as usize];
+        let t = (angle.radians - start) / (end - start);
+        let mut color = lut[sample_fn(Point::new(t * 255., 0.), 256, 1).x as u8 as usize];
         color.alpha *= mask;
         *dst = blend_fn(*dst, color);
     }
@@ -1178,6 +1169,7 @@ fn fill_with_sweep_gradient(
 mod tests {
     use lyon_path::{
         math::{
+            Angle,
             Box2D,
             Point,
             Transform,
@@ -1185,12 +1177,19 @@ mod tests {
         },
         Path,
     };
-    use palette::Srgba;
+    use palette::{
+        rgb::Rgba,
+        Srgba,
+    };
 
     use crate::{
         graphics::{
+            BlendMode,
             Canvas,
+            GradientStop,
             Image,
+            SampleMode,
+            Shader,
         },
         utils::Outline,
         Font,
@@ -1506,6 +1505,237 @@ mod tests {
         assert_eq!(mask.width, width);
         assert_eq!(mask.height, height);
         for (m, d) in mask.to_color().iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn linear_grad() {
+        let mut canvas = Canvas::new(32, 32);
+
+        canvas.fill(
+            &Shader::LinearGradient {
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Rgba::new(1., 0., 0., 1.).into_format(),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Rgba::new(0., 1., 0., 1.).into_format(),
+                    },
+                ],
+                start: Point::new(8., 16.),
+                end: Point::new(24., 16.),
+                mode: SampleMode::Pad,
+            },
+            BlendMode::default(),
+            Transform::default(),
+        );
+
+        let (data, _, _) =
+            Image::load_from_memory(include_bytes!("goldens/linear_grad.png")).unwrap();
+
+        for (m, d) in canvas.result.iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn linear_grad_vert() {
+        let mut canvas = Canvas::new(32, 32);
+
+        canvas.fill(
+            &Shader::LinearGradient {
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Rgba::new(1., 0., 0., 1.).into_format(),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Rgba::new(0., 1., 0., 1.).into_format(),
+                    },
+                ],
+                start: Point::new(16., 8.),
+                end: Point::new(16., 24.),
+                mode: SampleMode::Pad,
+            },
+            BlendMode::default(),
+            Transform::default(),
+        );
+
+        let (data, _, _) =
+            Image::load_from_memory(include_bytes!("goldens/linear_grad_vert.png")).unwrap();
+
+        for (m, d) in canvas.result.iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn linear_grad_angle() {
+        let mut canvas = Canvas::new(32, 32);
+
+        canvas.fill(
+            &Shader::LinearGradient {
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Rgba::new(1., 0., 0., 1.).into_format(),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Rgba::new(0., 1., 0., 1.).into_format(),
+                    },
+                ],
+                start: Point::new(8., 8.),
+                end: Point::new(24., 24.),
+                mode: SampleMode::Pad,
+            },
+            BlendMode::default(),
+            Transform::default(),
+        );
+
+        let (data, _, _) =
+            Image::load_from_memory(include_bytes!("goldens/linear_grad_angle.png")).unwrap();
+
+        for (m, d) in canvas.result.iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn sweep_gradient() {
+        let mut canvas = Canvas::new(32, 32);
+
+        canvas.fill(
+            &Shader::SweepGradient {
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Rgba::new(1., 1., 0., 1.).into_format(),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Rgba::new(1., 0., 0., 1.).into_format(),
+                    },
+                ],
+                center: Point::new(16., 16.),
+                start: Angle::degrees(110.),
+                end: Angle::degrees(230.),
+                mode: SampleMode::Pad,
+            },
+            BlendMode::default(),
+            Transform::default(),
+        );
+
+        let (data, _, _) =
+            Image::load_from_memory(include_bytes!("goldens/sweep_gradient.png")).unwrap();
+
+        for (m, d) in canvas.result.iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn cylinder_gradient() {
+        let mut canvas = Canvas::new(32, 32);
+
+        canvas.fill(
+            &Shader::ConicalGradient {
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Rgba::new(1., 0., 0., 1.).into_format(),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Rgba::new(0., 0., 1., 1.).into_format(),
+                    },
+                ],
+                c0: Point::new(8., 8.),
+                r0: 8.,
+                c1: Point::new(24., 8.),
+                r1: 8.,
+                mode: SampleMode::Pad,
+            },
+            BlendMode::default(),
+            Transform::default(),
+        );
+
+        let (data, _, _) =
+            Image::load_from_memory(include_bytes!("goldens/cylinder_gradient.png")).unwrap();
+
+        for (m, d) in canvas.result.iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn conical_gradient_less() {
+        let mut canvas = Canvas::new(32, 32);
+
+        canvas.fill(
+            &Shader::ConicalGradient {
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Rgba::new(1., 0., 0., 1.).into_format(),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Rgba::new(0., 0., 1., 1.).into_format(),
+                    },
+                ],
+                c0: Point::new(8., 8.),
+                r0: 4.,
+                c1: Point::new(24., 8.),
+                r1: 16.,
+                mode: SampleMode::Pad,
+            },
+            BlendMode::default(),
+            Transform::default(),
+        );
+
+        let (data, _, _) =
+            Image::load_from_memory(include_bytes!("goldens/conical_gradient_less.png")).unwrap();
+
+        for (m, d) in canvas.result.iter().zip(data.iter()) {
+            assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
+        }
+    }
+
+    #[test]
+    fn conical_gradient_gt() {
+        let mut canvas = Canvas::new(32, 32);
+
+        canvas.fill(
+            &Shader::ConicalGradient {
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Rgba::new(1., 0., 0., 1.).into_format(),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Rgba::new(0., 0., 1., 1.).into_format(),
+                    },
+                ],
+                c0: Point::new(8., 8.),
+                r0: 16.,
+                c1: Point::new(24., 8.),
+                r1: 4.,
+                mode: SampleMode::Pad,
+            },
+            BlendMode::default(),
+            Transform::default(),
+        );
+
+        let (data, _, _) =
+            Image::load_from_memory(include_bytes!("goldens/conical_gradient_gt.png")).unwrap();
+
+        for (m, d) in canvas.result.iter().zip(data.iter()) {
             assert_eq!(Srgba::<u8>::from_format(*m), Srgba::<u8>::from_format(*d));
         }
     }
