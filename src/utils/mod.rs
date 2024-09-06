@@ -10,10 +10,28 @@ use raqote::{
     Point,
     SolidSource,
     Source,
+    Spread,
     Transform,
     Vector,
 };
-use rustybuzz::ttf_parser::colr::CompositeMode;
+use skrifa::{
+    color::{
+        Brush,
+        ColorPainter,
+        CompositeMode,
+    },
+    instance::Location,
+    metrics::BoundingBox,
+    outline::{
+        DrawSettings,
+        OutlinePen,
+    },
+    prelude::Size,
+    raw::TableProvider,
+    MetadataProvider,
+};
+
+use crate::Font;
 
 pub(crate) mod lru;
 pub(crate) mod plan_cache;
@@ -59,20 +77,41 @@ impl rustybuzz::ttf_parser::OutlineBuilder for Outline {
     }
 }
 
+impl OutlinePen for Outline {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.path.move_to(x, y);
+    }
+
+    fn line_to(&mut self, x: f32, y: f32) {
+        self.path.line_to(x, y)
+    }
+
+    fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+        self.path.quad_to(cx0, cy0, x, y);
+    }
+
+    fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+        self.path.cubic_to(cx0, cy0, cx1, cy1, x, y);
+    }
+
+    fn close(&mut self) {
+        self.path.close();
+    }
+}
+
 pub(crate) struct Painter<'f, 'd, 'p> {
-    font: &'f rustybuzz::Face<'d>,
+    font: &'f Font<'d>,
     target: &'f mut DrawTarget<&'p mut [u32]>,
     skew: Transform,
-    outline: Path,
     scale: f32,
     y_offset: f32,
     x_offset: f32,
-    transforms: Vec<rustybuzz::ttf_parser::Transform>,
+    transforms: Vec<skrifa::color::Transform>,
 }
 
 impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
     pub(crate) fn new(
-        font: &'f rustybuzz::Face<'d>,
+        font: &'f Font<'d>,
         target: &'f mut DrawTarget<&'p mut [u32]>,
         skew: Transform,
         scale: f32,
@@ -83,7 +122,6 @@ impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
             font,
             target,
             skew,
-            outline: PathBuilder::new().finish(),
             scale,
             y_offset,
             x_offset,
@@ -95,7 +133,7 @@ impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
         self.transforms
             .iter()
             .fold(Transform::default(), |tfm, t| {
-                tfm.then(&Transform::new(t.a, t.b, t.c, t.d, t.e, t.f))
+                tfm.then(&Transform::new(t.xx, t.yx, t.xy, t.yy, t.dx, t.dy))
             })
             .then_scale(self.scale, -self.scale)
             .then(&self.skew)
@@ -103,99 +141,144 @@ impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
     }
 }
 
-impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd, 'p> {
-    fn outline_glyph(&mut self, glyph_id: rustybuzz::ttf_parser::GlyphId) {
+impl<'f, 'd, 'p> ColorPainter for Painter<'f, 'd, 'p> {
+    fn push_clip_glyph(&mut self, glyph_id: skrifa::GlyphId) {
         let mut outline = Outline::default();
-        if self.font.outline_glyph(glyph_id, &mut outline).is_some() {
-            self.outline = outline.finish();
+        if let Some(path) = self
+            .font
+            .skrifa()
+            .outline_glyphs()
+            .get(glyph_id)
+            .and_then(|glyph_outline| {
+                glyph_outline
+                    .draw(
+                        DrawSettings::unhinted(Size::unscaled(), &Location::default()),
+                        &mut outline,
+                    )
+                    .ok()
+            })
+            .map(|_| outline.finish())
+        {
+            self.target
+                .push_clip(&path.transform(&self.compute_transform()));
         }
     }
 
-    /// The documentation for this function implies that you should use the
-    /// ouline stored from `outline_glyph`, but _actually_ you should be filling
-    /// the clipped path with whatever paint is provided.
-    /// See skrifa's [`ColorPainter`](https://docs.rs/skrifa/latest/skrifa/color/trait.ColorPainter.html)
-    /// for correct documentation.
-    fn paint(&mut self, paint: rustybuzz::ttf_parser::colr::Paint<'a>) {
-        let paint = match paint {
-            rustybuzz::ttf_parser::colr::Paint::Solid(color) => {
+    fn fill(&mut self, brush: Brush<'_>) {
+        let paint = match brush {
+            Brush::Solid {
+                palette_index,
+                alpha,
+            } => {
+                let color = self
+                    .font
+                    .skrifa()
+                    .cpal()
+                    .expect("Missing cpal table")
+                    .color_records_array()
+                    .and_then(Result::ok)
+                    .expect("Missing cpal table")[palette_index as usize];
                 Source::Solid(SolidSource::from_unpremultiplied_argb(
-                    color.alpha,
+                    (color.alpha as f32 / 255. * alpha * 255.) as u8,
                     color.red,
                     color.green,
                     color.blue,
                 ))
             }
-            rustybuzz::ttf_parser::colr::Paint::LinearGradient(grad) => {
+            Brush::LinearGradient {
+                p0,
+                p1,
+                color_stops,
+                extend,
+            } => {
+                let colors = self
+                    .font
+                    .skrifa()
+                    .cpal()
+                    .expect("Missing cpal table")
+                    .color_records_array()
+                    .and_then(Result::ok)
+                    .expect("Missing cpal table");
+
                 // https://learn.microsoft.com/en-us/typography/opentype/spec/colr#linear-gradients
-                let mut stops = grad
-                    .stops(0, &[])
-                    .map(|stop| GradientStop {
-                        position: stop.stop_offset,
-                        color: Color::new(
-                            stop.color.alpha,
-                            stop.color.red,
-                            stop.color.green,
-                            stop.color.blue,
-                        ),
+                let mut stops = color_stops
+                    .iter()
+                    .map(|stop| {
+                        let color = colors[stop.palette_index as usize];
+                        GradientStop {
+                            position: stop.offset,
+                            color: Color::new(
+                                (color.alpha as f32 / 255. * stop.alpha * 255.) as u8,
+                                color.red,
+                                color.green,
+                                color.blue,
+                            ),
+                        }
                     })
                     .collect::<Vec<_>>();
                 stops.sort_by(|l, r| l.position.total_cmp(&r.position));
 
                 let transform = self.compute_transform();
-                let p0 = transform.transform_point(Point::new(grad.x0, grad.y0));
-                let p1 = transform.transform_point(Point::new(grad.x1, grad.y1));
-                let p2 = transform.transform_point(Point::new(grad.x2, grad.y2));
+                let p0 = transform.transform_point(Point::new(p0.x, p0.y));
+                let p1 = transform.transform_point(Point::new(p1.x, p1.y));
 
-                if p0 == p1 || p0 == p2 {
+                if p0 == p1 {
                     return;
                 }
-
-                // Get the line perpendicular to p0p2
-                let dist = p2 - p0;
-                let perp = Vector::new(dist.y, -dist.x);
-
-                // Project the vector p0p1 onto the perpendicular line passing through p0
-                // https://en.wikipedia.org/wiki/Vector_projection#Vector_projection_2
-                let dist = p1 - p0;
-                let p3 = p0 + perp * (dist.dot(perp) / perp.length().powi(2));
 
                 Source::new_linear_gradient(
                     Gradient { stops },
                     p0,
-                    p3,
-                    match grad.extend {
-                        rustybuzz::ttf_parser::colr::GradientExtend::Pad => raqote::Spread::Pad,
-                        rustybuzz::ttf_parser::colr::GradientExtend::Repeat => {
-                            raqote::Spread::Repeat
-                        }
-                        rustybuzz::ttf_parser::colr::GradientExtend::Reflect => {
-                            raqote::Spread::Reflect
+                    p1,
+                    match extend {
+                        skrifa::color::Extend::Pad => Spread::Pad,
+                        skrifa::color::Extend::Repeat => Spread::Repeat,
+                        skrifa::color::Extend::Reflect => Spread::Reflect,
+                        _ => {
+                            warn!("Malformed font");
+                            Spread::Pad
                         }
                     },
                 )
             }
-            rustybuzz::ttf_parser::colr::Paint::RadialGradient(grad) => {
-                let mut stops = grad
-                    .stops(0, &[])
-                    .map(|stop| GradientStop {
-                        position: stop.stop_offset,
-                        color: Color::new(
-                            stop.color.alpha,
-                            stop.color.red,
-                            stop.color.green,
-                            stop.color.blue,
-                        ),
+            Brush::RadialGradient {
+                c0,
+                r0,
+                c1,
+                r1,
+                color_stops,
+                extend,
+            } => {
+                let colors = self
+                    .font
+                    .skrifa()
+                    .cpal()
+                    .expect("Missing cpal table")
+                    .color_records_array()
+                    .and_then(Result::ok)
+                    .expect("Missing cpal table");
+
+                let mut stops = color_stops
+                    .iter()
+                    .map(|stop| {
+                        let color = colors[stop.palette_index as usize];
+                        GradientStop {
+                            position: stop.offset,
+                            color: Color::new(
+                                (color.alpha as f32 / 255. * stop.alpha * 255.) as u8,
+                                color.red,
+                                color.green,
+                                color.blue,
+                            ),
+                        }
                     })
                     .collect::<Vec<_>>();
                 stops.sort_by(|l, r| l.position.total_cmp(&r.position));
 
-                let p0 = Point::new(grad.x0, grad.y0);
-                let p1 = Point::new(grad.x1, grad.y1);
-                let r0 = grad.r0;
-                let r1 = grad.r1;
+                let c0 = Point::new(c0.x, c0.y);
+                let c1 = Point::new(c1.x, c1.y);
 
-                if p0 == p1 && r0 == r1 {
+                if c0 == c1 && r0 == r1 {
                     return;
                 }
 
@@ -203,52 +286,72 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
                 // SegoeUIEmoji to other renderers).
                 Source::TwoCircleRadialGradient(
                     Gradient { stops },
-                    match grad.extend {
-                        rustybuzz::ttf_parser::colr::GradientExtend::Pad => raqote::Spread::Pad,
-                        rustybuzz::ttf_parser::colr::GradientExtend::Repeat => {
-                            raqote::Spread::Repeat
-                        }
-                        rustybuzz::ttf_parser::colr::GradientExtend::Reflect => {
-                            raqote::Spread::Reflect
+                    match extend {
+                        skrifa::color::Extend::Pad => Spread::Pad,
+                        skrifa::color::Extend::Repeat => Spread::Repeat,
+                        skrifa::color::Extend::Reflect => Spread::Reflect,
+                        _ => {
+                            warn!("Malformed font");
+                            Spread::Pad
                         }
                     },
-                    p0,
+                    c0,
                     r0,
-                    p1,
+                    c1,
                     r1,
                     self.compute_transform().inverse().unwrap_or_default(),
                 )
             }
-            rustybuzz::ttf_parser::colr::Paint::SweepGradient(grad) => {
-                let mut stops = grad
-                    .stops(0, &[])
-                    .map(|stop| GradientStop {
-                        position: stop.stop_offset,
-                        color: Color::new(
-                            stop.color.alpha,
-                            stop.color.red,
-                            stop.color.green,
-                            stop.color.blue,
-                        ),
+            Brush::SweepGradient {
+                c0,
+                start_angle,
+                end_angle,
+                color_stops,
+                extend,
+            } => {
+                let colors = self
+                    .font
+                    .skrifa()
+                    .cpal()
+                    .expect("Missing cpal table")
+                    .color_records_array()
+                    .and_then(Result::ok)
+                    .expect("Missing cpal table");
+
+                let mut stops = color_stops
+                    .iter()
+                    .map(|stop| {
+                        let color = colors[stop.palette_index as usize];
+                        GradientStop {
+                            position: stop.offset,
+                            color: Color::new(
+                                (color.alpha as f32 / 255. * stop.alpha * 255.) as u8,
+                                color.red,
+                                color.green,
+                                color.blue,
+                            ),
+                        }
                     })
                     .collect::<Vec<_>>();
                 stops.sort_by(|l, r| l.position.total_cmp(&r.position));
 
-                Source::new_sweep_gradient(
+                Source::SweepGradient(
                     Gradient { stops },
-                    self.compute_transform()
-                        .transform_point(Point::new(grad.center_x, grad.center_y)),
-                    grad.start_angle,
-                    grad.end_angle,
-                    match grad.extend {
-                        rustybuzz::ttf_parser::colr::GradientExtend::Pad => raqote::Spread::Pad,
-                        rustybuzz::ttf_parser::colr::GradientExtend::Repeat => {
-                            raqote::Spread::Repeat
-                        }
-                        rustybuzz::ttf_parser::colr::GradientExtend::Reflect => {
-                            raqote::Spread::Reflect
+                    match extend {
+                        skrifa::color::Extend::Pad => Spread::Pad,
+                        skrifa::color::Extend::Repeat => Spread::Repeat,
+                        skrifa::color::Extend::Reflect => Spread::Reflect,
+                        _ => {
+                            warn!("Malformed font");
+                            Spread::Pad
                         }
                     },
+                    start_angle,
+                    end_angle,
+                    self.compute_transform()
+                        .inverse()
+                        .unwrap_or_default()
+                        .then_translate(Vector::new(-c0.x, -c0.y)),
                 )
             }
         };
@@ -269,12 +372,7 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
         );
     }
 
-    fn push_clip(&mut self) {
-        self.target.set_transform(&self.compute_transform());
-        self.target.push_clip(&self.outline);
-    }
-
-    fn push_clip_box(&mut self, clipbox: rustybuzz::ttf_parser::colr::ClipBox) {
+    fn push_clip_box(&mut self, clipbox: BoundingBox) {
         let transform = self.compute_transform();
 
         let xy0 = transform.transform_point((clipbox.x_min, clipbox.y_min).into());
@@ -294,21 +392,21 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
         self.target.pop_clip();
     }
 
-    fn push_layer(&mut self, mode: rustybuzz::ttf_parser::colr::CompositeMode) {
+    fn push_layer(&mut self, mode: CompositeMode) {
         self.target.push_layer_with_blend(
             1.0,
             match mode {
                 CompositeMode::Clear => raqote::BlendMode::Clear,
-                CompositeMode::Source => raqote::BlendMode::Src,
-                CompositeMode::Destination => raqote::BlendMode::Dst,
-                CompositeMode::SourceOver => raqote::BlendMode::SrcOver,
-                CompositeMode::DestinationOver => raqote::BlendMode::DstOver,
-                CompositeMode::SourceIn => raqote::BlendMode::SrcIn,
-                CompositeMode::DestinationIn => raqote::BlendMode::DstIn,
-                CompositeMode::SourceOut => raqote::BlendMode::SrcOut,
-                CompositeMode::DestinationOut => raqote::BlendMode::DstOut,
-                CompositeMode::SourceAtop => raqote::BlendMode::SrcAtop,
-                CompositeMode::DestinationAtop => raqote::BlendMode::DstAtop,
+                CompositeMode::Src => raqote::BlendMode::Src,
+                CompositeMode::Dest => raqote::BlendMode::Dst,
+                CompositeMode::SrcOver => raqote::BlendMode::SrcOver,
+                CompositeMode::DestOver => raqote::BlendMode::DstOver,
+                CompositeMode::SrcIn => raqote::BlendMode::SrcIn,
+                CompositeMode::DestIn => raqote::BlendMode::DstIn,
+                CompositeMode::SrcOut => raqote::BlendMode::SrcOut,
+                CompositeMode::DestOut => raqote::BlendMode::DstOut,
+                CompositeMode::SrcAtop => raqote::BlendMode::SrcAtop,
+                CompositeMode::DestAtop => raqote::BlendMode::DstAtop,
                 CompositeMode::Xor => raqote::BlendMode::Xor,
                 CompositeMode::Plus => raqote::BlendMode::Add,
                 CompositeMode::Screen => raqote::BlendMode::Screen,
@@ -322,10 +420,14 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
                 CompositeMode::Difference => raqote::BlendMode::Difference,
                 CompositeMode::Exclusion => raqote::BlendMode::Exclusion,
                 CompositeMode::Multiply => raqote::BlendMode::Multiply,
-                CompositeMode::Hue => raqote::BlendMode::Hue,
-                CompositeMode::Saturation => raqote::BlendMode::Saturation,
-                CompositeMode::Color => raqote::BlendMode::Color,
-                CompositeMode::Luminosity => raqote::BlendMode::Luminosity,
+                CompositeMode::HslHue => raqote::BlendMode::Hue,
+                CompositeMode::HslSaturation => raqote::BlendMode::Saturation,
+                CompositeMode::HslColor => raqote::BlendMode::Color,
+                CompositeMode::HslLuminosity => raqote::BlendMode::Luminosity,
+                _ => {
+                    warn!("Malformed font");
+                    raqote::BlendMode::SrcOver
+                }
             },
         );
     }
@@ -334,7 +436,7 @@ impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd
         self.target.pop_layer();
     }
 
-    fn push_transform(&mut self, transform: rustybuzz::ttf_parser::Transform) {
+    fn push_transform(&mut self, transform: skrifa::color::Transform) {
         self.transforms.push(transform);
     }
 

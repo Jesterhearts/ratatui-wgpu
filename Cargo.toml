@@ -11,6 +11,7 @@ keywords     = [ "wasm", "tui", "rendering" ]
 [features]
 default         = [ "ahash", "underline-color" ]
 ahash           = [ "dep:ahash" ]
+colr_v1         = [  ]
 underline-color = [ "ratatui/underline-color" ]
 web             = [ "wgpu/webgl" ]
 
@@ -33,6 +34,7 @@ log                = { version = "0.4.22", default-features = false }
 raqote             = { version = "0.8.4", default-features = false }
 ratatui            = { version = "0.28.0", default-features = false }
 rustybuzz          = "0.18.0"
+skrifa             = "0.21.0"
 thiserror          = "1.0.63"
 unicode-bidi       = "0.3.15"
 unicode-properties = "0.1.2"

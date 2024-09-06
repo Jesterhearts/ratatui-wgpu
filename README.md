@@ -32,6 +32,10 @@ The crate has the following goals in order of descending priority.
       this backend to render from a worker thread.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping, mixed bidi, and combining sequences).
+   - Currently only colr v0 outlines (emojis) are supported. There's an optional feature flag
+     `colr_v1` which enables support for colr v1, but you may see issues with radial gradients. If
+     you're using the regular font size this is unlikely to be an issue, but it's disabled by
+     default for this reason.
 4. Reasonable performance.
 
 ## Non-goals
@@ -76,6 +80,10 @@ definitely not minimal.
 8. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
    external dependency on some other library to do this for me. Rustybuzz happens to be (imo) the
    current best choice.
+9. skrifa: ttf_parser (used by rustybuzz) makes it difficult to directly access the data for colr v0
+   paths and painting and instead forces you to handle colr v1 paths if they're present on the font.
+   There's currently a bug in radial gradients, making v1 not render correctly and requiring me to
+   only support v0. Skrifa makes it easy to only paint v0 paths.
 9. thiserror: I don't want to write the Error trait by hand. I might consider removing this if doing
    so doesn't turn out to be so bad.
 10. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,

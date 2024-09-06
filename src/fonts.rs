@@ -9,11 +9,13 @@ use ratatui::{
     style::Modifier,
 };
 use rustybuzz::Face;
+use skrifa::FontRef;
 
 /// A Font which can be used for rendering.
 #[derive(Clone)]
 pub struct Font<'a> {
     font: Face<'a>,
+    skrifa: FontRef<'a>,
     advance: f32,
     id: u64,
 }
@@ -25,15 +27,17 @@ impl<'a> Font<'a> {
         let mut hasher = RandomState::new().build_hasher();
         hasher.write(data);
 
-        Face::from_slice(data, 0).map(|font| {
+        Face::from_slice(data, 0).and_then(|font| {
+            let skrifa = FontRef::from_index(data, 0).ok()?;
             let advance = font
                 .glyph_hor_advance(font.glyph_index('m').unwrap_or_default())
                 .unwrap_or_default() as f32;
-            Self {
+            Some(Self {
                 font,
+                skrifa,
                 advance,
                 id: hasher.finish(),
-            }
+            })
         })
     }
 }
@@ -45,6 +49,10 @@ impl Font<'_> {
 
     pub(crate) fn font(&self) -> &Face {
         &self.font
+    }
+
+    pub(crate) fn skrifa(&self) -> &FontRef {
+        &self.skrifa
     }
 
     pub(crate) fn char_width(&self, height_px: u32) -> u32 {
