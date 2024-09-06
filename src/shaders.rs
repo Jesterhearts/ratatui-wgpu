@@ -55,7 +55,7 @@ struct Uniforms {
     screen_size: [f32; 2],
     _pad0: [f32; 2],
     use_srgb: u32,
-    _pad1: [u32; 3],
+    _pad1: [u32; 7],
 }
 
 /// The default post-processor. Used when you don't want to perform any custom
@@ -220,7 +220,7 @@ impl PostProcessor for DefaultPostProcessor {
                 screen_size: [surface_config.width as f32, surface_config.height as f32],
                 _pad0: [0.; 2],
                 use_srgb: u32::from(surface_config.format.is_srgb()),
-                _pad1: [0; 3],
+                _pad1: [0; 7],
             }));
         }
 

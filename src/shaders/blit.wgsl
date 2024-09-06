@@ -21,6 +21,7 @@ struct Uniforms {
     screen_size: vec2<f32>,
     _pad0: vec2<f32>,
     use_srgb: u32,
+    _pad1: vec3<u32>,
 }
 
 @group(0) @binding(2)
