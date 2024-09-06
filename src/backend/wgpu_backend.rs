@@ -883,16 +883,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         255
                     };
 
-                    let underline_color;
-                    #[cfg(feature = "underline-color")]
-                    {
-                        underline_color = c2c(cell.underline_color, fg_color);
-                    }
-                    #[cfg(not(feature = "underline-color"))]
-                    {
-                        underline_color = fg_color
-                    }
-
+                    let underline_color = fg_color;
                     let [r, g, b] = fg_color;
                     let fg_color: u32 = u32::from_be_bytes([r, g, b, alpha]);
 
