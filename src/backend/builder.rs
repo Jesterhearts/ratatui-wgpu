@@ -345,6 +345,15 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
             .await
     }
 
+    #[cfg(test)]
+    pub(crate) async fn build_headless_with_format(
+        self,
+        format: TextureFormat,
+    ) -> Result<WgpuBackend<'a, 'static, P, super::HeadlessSurface>> {
+        self.build_with_render_surface(super::HeadlessSurface::new(format))
+            .await
+    }
+
     async fn build_with_render_surface<'s, S: RenderSurface<'s> + 's>(
         mut self,
         mut surface: S,

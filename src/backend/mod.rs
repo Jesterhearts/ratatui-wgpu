@@ -216,13 +216,36 @@ pub(crate) struct HeadlessTarget {
     view: TextureView,
 }
 
-#[derive(Default)]
 pub(crate) struct HeadlessSurface {
     pub(crate) texture: Option<Texture>,
     pub(crate) buffer: Option<Buffer>,
     pub(crate) buffer_width: u32,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    pub(crate) format: TextureFormat,
+}
+
+impl HeadlessSurface {
+    #[cfg(test)]
+    fn new(format: TextureFormat) -> Self {
+        Self {
+            format,
+            ..Default::default()
+        }
+    }
+}
+
+impl Default for HeadlessSurface {
+    fn default() -> Self {
+        Self {
+            texture: Default::default(),
+            buffer: Default::default(),
+            buffer_width: Default::default(),
+            width: Default::default(),
+            height: Default::default(),
+            format: TextureFormat::Rgba8Unorm,
+        }
+    }
 }
 
 impl RenderSurface<'static> for HeadlessSurface {
@@ -241,7 +264,7 @@ impl RenderSurface<'static> for HeadlessSurface {
     ) -> Option<SurfaceConfiguration> {
         Some(SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
-            format: TextureFormat::Rgba8Unorm,
+            format: self.format,
             width,
             height,
             present_mode: wgpu::PresentMode::Immediate,
@@ -267,7 +290,7 @@ impl RenderSurface<'static> for HeadlessSurface {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
+            format: self.format,
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
             view_formats: &[],
         }));

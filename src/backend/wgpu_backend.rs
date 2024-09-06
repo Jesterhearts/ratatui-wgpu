@@ -1148,7 +1148,10 @@ mod tests {
         Rgba,
     };
     use ratatui::{
-        style::Stylize,
+        style::{
+            Color,
+            Stylize,
+        },
         text::Line,
         widgets::{
             Block,
@@ -1164,6 +1167,7 @@ mod tests {
         ImageCopyBuffer,
         ImageDataLayout,
         Queue,
+        TextureFormat,
     };
 
     use crate::{
@@ -1636,6 +1640,122 @@ mod tests {
 
             let pixels = image.pixels().copied().collect::<Vec<_>>();
             let golden = load_from_memory(include_bytes!("goldens/overlap_colors.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn rgb_conversion() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_bg_color(Color::Rgb(0x1E, 0x23, 0x26))
+                .with_fg_color(Color::White)
+                .build_headless_with_format(TextureFormat::Rgba8Unorm),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("TEST"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/rgb_conversion.png")).unwrap();
+            let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
+
+            assert!(
+                pixels == golden_pixels,
+                "Rendered image differs from golden"
+            );
+        }
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn srgb_conversion() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
+                )
+                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_bg_color(Color::Rgb(0x1E, 0x23, 0x26))
+                .with_fg_color(Color::White)
+                .build_headless_with_format(TextureFormat::Rgba8UnormSrgb),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("TEST"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image =
+                ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
+
+            let pixels = image.pixels().copied().collect::<Vec<_>>();
+            let golden = load_from_memory(include_bytes!("goldens/srgb_conversion.png")).unwrap();
             let golden_pixels = golden.pixels().map(|(_, _, px)| px).collect::<Vec<_>>();
 
             assert!(
