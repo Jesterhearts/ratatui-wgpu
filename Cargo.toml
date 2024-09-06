@@ -28,8 +28,8 @@ required-features = [ "web" ]
 [dependencies]
 ahash              = { version = "0.8.11", default-features = false, features = [ "std", "compile-time-rng" ], optional = true }
 bitvec             = { version = "1.0.1", default-features = false, features = [ "std" ] }
-bytemuck           = { version = "1.17.0", features = [ "derive" ] }
-indexmap           = { version = "2.4.0", default-features = false, features = [ "std" ] }
+bytemuck           = { version = "1.18.0", features = [ "derive" ] }
+indexmap           = { version = "2.5.0", default-features = false, features = [ "std" ] }
 log                = { version = "0.4.22", default-features = false }
 raqote             = { version = "0.8.4", default-features = false }
 ratatui            = { version = "0.28.0", default-features = false }
