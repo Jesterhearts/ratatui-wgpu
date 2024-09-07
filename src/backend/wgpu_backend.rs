@@ -138,6 +138,10 @@ type Sourced = HashSet<(i32, i32, GlyphId, u32), RandomState>;
 ///
 /// Constructed using a [`Builder`](crate::Builder).
 ///
+/// The first lifetime parameter is the lifetime of the data for referenced
+/// [`Font`] objects. The second lifetime parameter is the lifetime of the
+/// referenced [`Surface`] (typically the lifetime of your window object).
+///
 /// Limitations:
 /// - The cursor is tracked but not rendered.
 /// - No builtin accessibilty, although [`WgpuBackend::get_text`] is provided to
