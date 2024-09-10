@@ -2365,8 +2365,8 @@ mod tests {
 
     #[test]
     fn bmp4_packed() {
-        let data0 = 0b1010_1000u8.reverse_bits();
-        let data1 = 0b0000_1000u8.reverse_bits();
+        let data0 = 0b1111_0001u8.reverse_bits();
+        let data1 = 0b0011_1100u8.reverse_bits();
         let raster = RasterGlyphImage {
             x: 0,
             y: 0,
@@ -2396,12 +2396,12 @@ mod tests {
             bytemuck::cast_slice::<_, u8>(&extracted),
             bytemuck::cast_slice(&[
                 [
-                    [LUT_4[0b1010], LUT_4[0b1010], LUT_4[0b1010], 255,],
-                    [LUT_4[0b1000], LUT_4[0b1000], LUT_4[0b1000], 255,],
+                    [LUT_4[0b1111], LUT_4[0b1111], LUT_4[0b1111], 255,],
+                    [LUT_4[0b0001], LUT_4[0b0001], LUT_4[0b0001], 255,],
                 ],
                 [
-                    [LUT_4[0b0000], LUT_4[0b0000], LUT_4[0b0000], 255,],
-                    [LUT_4[0b1000], LUT_4[0b1000], LUT_4[0b1000], 255,],
+                    [LUT_4[0b0011], LUT_4[0b0011], LUT_4[0b0011], 255,],
+                    [LUT_4[0b1100], LUT_4[0b1100], LUT_4[0b1100], 255,],
                 ],
             ])
         );
