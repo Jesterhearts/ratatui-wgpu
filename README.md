@@ -32,10 +32,10 @@ The crate has the following goals in order of descending priority.
       this backend to render from a worker thread.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping, mixed bidi, and combining sequences).
-   - Currently only colr v0 outlines (emojis) are supported. There's an optional feature flag
-     `colr_v1` which enables support for colr v1, but you may see issues with radial gradients. If
-     you're using the regular font size this is unlikely to be an issue, but it's disabled by
-     default for this reason.
+   - For color fonts (e.g. emojis) only colr v0 outlines and raster images are supported. There's an
+     optional feature flag `colr_v1` which enables support for colr v1, but you may see issues with
+     radial gradients. If you're using the regular font size this is unlikely to be an issue, but
+     it's disabled by default for this reason.
 4. Reasonable performance.
 
 ## Non-goals
