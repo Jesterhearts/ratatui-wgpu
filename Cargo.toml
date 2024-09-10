@@ -9,9 +9,10 @@ description  = "A wgpu based backend for ratatui."
 keywords     = [ "wasm", "tui", "rendering" ]
 
 [features]
-default = [ "ahash" ]
+default = [ "ahash", "png" ]
 ahash   = [ "dep:ahash" ]
 colr_v1 = [  ]
+png     = [ "dep:png" ]
 web     = [ "wgpu/webgl" ]
 
 [[example]]
@@ -30,6 +31,7 @@ bitvec             = { version = "1.0.1", default-features = false, features = [
 bytemuck           = { version = "1.18.0", features = [ "derive" ] }
 indexmap           = { version = "2.5.0", default-features = false, features = [ "std" ] }
 log                = { version = "0.4.22", default-features = false }
+png                = { version = "0.17.13", optional = true }
 raqote             = { version = "0.8.4", default-features = false }
 ratatui            = { version = "0.28.0", default-features = false }
 rustybuzz          = "0.18.0"
