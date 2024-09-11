@@ -87,8 +87,8 @@ impl ApplicationHandler for App {
                         .unwrap(),
                     )
                     .with_dimensions(
-                        NonZeroU32::new(size.width).unwrap(),
                         NonZeroU32::new(size.height).unwrap(),
+                        NonZeroU32::new(size.width).unwrap(),
                     )
                     .build_with_target(self.window.as_ref().unwrap().clone()),
                 )
