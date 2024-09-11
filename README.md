@@ -56,6 +56,25 @@ The crate has the following goals in order of descending priority.
    To put that in perspective, rendering every printable ascii character in every combination of
    styles would take (95 * 4) 380 cache entries or ~10% of the cache.
 
+## Changelog
+### 1.2 -> 1.3
+- Support colr v0 and png/bitmap images in fonts, allowing emoji rendering.
+  - Switched tiny_skia -> raqote.
+  - Added skrifa.
+  - Added unicode-properties.
+  - Added png.
+- Fix an issue with incorrect handling of srgb conversion in the default shader.
+### 1.1 -> 1.2
+- Added support for rtl and mixed bidi.
+  - Switched swash -> rustybuzz.
+- Added support for combining characters.
+- Added webworker example.
+- Added colors example.
+- Added dependency on ahash.
+- Dropped dependency on coolors.
+- Dropped dependency on palette.
+- Dropped dependency on guillotiere.
+
 ## Dependencies
 This crate attempts to be reasonable with its usage of external dependencies, although it is
 definitely not minimal.
