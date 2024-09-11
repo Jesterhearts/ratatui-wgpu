@@ -44,13 +44,13 @@ web-time           = "1.1.0"
 wgpu               = "22.1.0"
 
 [dev-dependencies]
-anyhow                   = "1.0.86"
+anyhow                   = "1.0.87"
 chrono                   = "0.4.38"
 console_error_panic_hook = "0.1.7"
 console_log              = "1.0.0"
 crossbeam-queue          = "0.3.11"
 env_logger               = "0.11.5"
-fontdb                   = "0.21.0"
+fontdb                   = "0.22.0"
 futures-lite             = "2.3.0"
 image                    = { version = "0.25.2", default-features = false, features = [ "png" ] }
 js-sys                   = "0.3.70"
