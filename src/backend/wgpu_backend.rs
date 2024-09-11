@@ -1280,7 +1280,7 @@ fn extract_bw_image(
         }
         RasterImageFormat::BitmapGray8 => {
             for (byte, dst) in raster.data.iter().zip(image.iter_mut()) {
-                *dst = u32::from_be_bytes([255, *byte, *byte, *byte]);
+                *dst = u32::from_be_bytes([*byte, 255, 255, 255]);
             }
         }
         _ => return None,
