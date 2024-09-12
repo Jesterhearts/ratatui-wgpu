@@ -83,7 +83,7 @@ pub async fn render_entrypoint(ptr: u32, canvas: wasm_bindgen::JsValue) {
                                 .unwrap(),
                             )
                             .with_width_and_height(Dimensions {
-                                width: NonZeroU32::new(canvas.height()).unwrap(),
+                                width: NonZeroU32::new(canvas.width()).unwrap(),
                                 height: NonZeroU32::new(canvas.height()).unwrap(),
                             })
                             .build_with_target(wgpu::SurfaceTarget::OffscreenCanvas(canvas))
