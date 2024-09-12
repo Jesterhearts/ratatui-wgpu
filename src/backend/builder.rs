@@ -265,7 +265,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
     #[must_use]
     #[doc(hidden)]
     #[deprecated = "The arguments for this are in a confusing order. Use with_width_and_height."]
-    pub fn with_dimensions(mut self, width: NonZeroU32, height: NonZeroU32) -> Self {
+    pub fn with_dimensions(mut self, height: NonZeroU32, width: NonZeroU32) -> Self {
         self.height = height;
         self.width = width;
         self
