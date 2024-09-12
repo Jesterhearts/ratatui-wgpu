@@ -10,6 +10,7 @@ use ratatui::{
 };
 use ratatui_wgpu::{
     Builder,
+    Dimensions,
     Font,
     WgpuBackend,
 };
@@ -93,7 +94,7 @@ impl ApplicationHandler for App {
                         )))
                         .unwrap(),
                     )
-                    .with_dimensions(height, width)
+                    .with_width_and_height(Dimensions { width, height })
                     .build_with_target(wgpu::SurfaceTarget::Canvas(canvas))
                     .await
                     .unwrap(),

@@ -1,6 +1,8 @@
 pub(crate) mod builder;
 pub(crate) mod wgpu_backend;
 
+use std::num::NonZeroU32;
+
 use ratatui::style::Color;
 use wgpu::{
     Adapter,
@@ -83,6 +85,18 @@ pub trait PostProcessor {
     /// text changes occurred.
     fn needs_update(&self) -> bool {
         false
+    }
+}
+
+/// The surface dimensions of the backend in pixels.
+pub struct Dimensions {
+    pub width: NonZeroU32,
+    pub height: NonZeroU32,
+}
+
+impl From<(NonZeroU32, NonZeroU32)> for Dimensions {
+    fn from((width, height): (NonZeroU32, NonZeroU32)) -> Self {
+        Self { width, height }
     }
 }
 

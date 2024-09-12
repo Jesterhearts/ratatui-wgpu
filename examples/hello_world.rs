@@ -11,6 +11,7 @@ use ratatui::{
 };
 use ratatui_wgpu::{
     Builder,
+    Dimensions,
     Font,
     WgpuBackend,
 };
@@ -94,10 +95,10 @@ impl ApplicationHandler for App<'_> {
                         .unwrap(),
                     )
                     .with_fonts(self.fonts.clone())
-                    .with_dimensions(
-                        NonZeroU32::new(size.height).unwrap(),
-                        NonZeroU32::new(size.width).unwrap(),
-                    )
+                    .with_width_and_height(Dimensions {
+                        width: NonZeroU32::new(size.width).unwrap(),
+                        height: NonZeroU32::new(size.height).unwrap(),
+                    })
                     .build_with_target(self.window.as_ref().unwrap().clone()),
                 )
                 .unwrap(),

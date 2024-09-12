@@ -1424,6 +1424,7 @@ mod tests {
             Entry,
         },
         Builder,
+        Dimensions,
         Font,
     };
 
@@ -1457,7 +1458,10 @@ mod tests {
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(512).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1515,7 +1519,10 @@ mod tests {
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1572,7 +1579,10 @@ mod tests {
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(512).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1630,7 +1640,10 @@ mod tests {
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(512).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1691,7 +1704,10 @@ mod tests {
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(512).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(512).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1755,7 +1771,10 @@ mod tests {
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1852,7 +1871,10 @@ mod tests {
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1908,7 +1930,10 @@ mod tests {
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .with_bg_color(Color::Rgb(0x1E, 0x23, 0x26))
                 .with_fg_color(Color::White)
                 .build_headless_with_format(TextureFormat::Rgba8Unorm),
@@ -1966,7 +1991,10 @@ mod tests {
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(NonZeroU32::new(72).unwrap(), NonZeroU32::new(256).unwrap())
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .with_bg_color(Color::Rgb(0x1E, 0x23, 0x26))
                 .with_fg_color(Color::White)
                 .build_headless_with_format(TextureFormat::Rgba8UnormSrgb),
