@@ -8,7 +8,11 @@ use std::{
     num::NonZeroU64,
 };
 
-use bitvec::vec::BitVec;
+use bitvec::{
+    order::Lsb0,
+    slice::BitSlice,
+    vec::BitVec,
+};
 use indexmap::IndexMap;
 use lyon_path::math::Transform;
 use palette::rgb::Rgba;
@@ -29,6 +33,8 @@ use rustybuzz::{
     shape_with_plan,
     ttf_parser::{
         GlyphId,
+        RasterGlyphImage,
+        RasterImageFormat,
         RgbaColor,
     },
     GlyphBuffer,
@@ -100,6 +106,8 @@ use crate::{
     graphics::{
         BlendMode,
         Canvas,
+        Image,
+        SampleMode,
         Shader,
     },
     shaders::DefaultPostProcessor,
@@ -136,6 +144,10 @@ type Sourced = HashSet<(i32, i32, GlyphId, u32), RandomState>;
 /// A ratatui backend leveraging wgpu for rendering.
 ///
 /// Constructed using a [`Builder`](crate::Builder).
+///
+/// The first lifetime parameter is the lifetime of the data for referenced
+/// [`Font`] objects. The second lifetime parameter is the lifetime of the
+/// referenced [`Surface`] (typically the lifetime of your window object).
 ///
 /// Limitations:
 /// - The cursor is tracked but not rendered.
@@ -669,7 +681,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         let (rect, image) = rasterize_glyph(
                             &mut self.canvas,
                             cached,
-                            metrics,
+                            font,
                             info,
                             fake_italic & !is_emoji,
                             fake_bold & !is_emoji,
@@ -884,16 +896,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         255
                     };
 
-                    let underline_color;
-                    #[cfg(feature = "underline-color")]
-                    {
-                        underline_color = c2c(cell.underline_color, fg_color);
-                    }
-                    #[cfg(not(feature = "underline-color"))]
-                    {
-                        underline_color = fg_color
-                    }
-
+                    let underline_color = fg_color;
                     let [r, g, b] = fg_color;
                     let fg_color: u32 = u32::from_be_bytes([r, g, b, alpha]);
 
@@ -999,7 +1002,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 fn rasterize_glyph(
     canvas: &mut Canvas,
     cached: Entry,
-    metrics: &rustybuzz::Face,
+    font: &Font,
     info: &rustybuzz::GlyphInfo,
     fake_italic: bool,
     fake_bold: bool,
@@ -1027,18 +1030,20 @@ fn rasterize_glyph(
     };
 
     let mut painter = Painter::new(
-        metrics,
+        font.font(),
         canvas,
         skew,
         scale,
-        metrics.ascender() as f32 * scale + computed_offset_y,
+        font.font().ascender() as f32 * scale + computed_offset_y,
         computed_offset_x,
     );
-    if metrics
+
+    if font
+        .font()
         .paint_color_glyph(
             GlyphId(info.glyph_id as _),
             0,
-            RgbaColor::new(255, 255, 255, 255),
+            RgbaColor::new(0, 0, 0, 255),
             &mut painter,
         )
         .is_some()
@@ -1046,8 +1051,24 @@ fn rasterize_glyph(
         return (*cached, canvas.pack_result());
     }
 
+    if let Some(raster) = font
+        .font()
+        .glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX)
+    {
+        if let Some(value) = extract_color_image(canvas, raster, cached, advance_scale) {
+            return value;
+        }
+    }
+
     let mut render = Outline::default();
-    if let Some(bounds) = metrics.outline_glyph(GlyphId(info.glyph_id as _), &mut render) {
+    // Why do we use rustybuzz instead of skrifa here? Because if the glyph has
+    // funky negative bounds (as can sometimes happen - more below), skrifa doesn't
+    // generate a path at all! Rustybuzz does the right thing and just gives us a
+    // path which is entirely negative.
+    if let Some(bounds) = font
+        .font()
+        .outline_glyph(GlyphId(info.glyph_id as _), &mut render)
+    {
         let path = render.finish();
 
         // Some fonts return bounds that are entirely negative. I'm not sure why this
@@ -1059,7 +1080,7 @@ fn rasterize_glyph(
             0.
         };
         let x_off = x_off * scale + computed_offset_x;
-        let y_off = metrics.ascender() as f32 * scale + computed_offset_y;
+        let y_off = font.font().ascender() as f32 * scale + computed_offset_y;
 
         let path = path.transformed(
             &Transform::scale(scale, -scale)
@@ -1077,24 +1098,225 @@ fn rasterize_glyph(
         return (*cached, canvas.pack_result());
     }
 
+    if let Some(raster) = font
+        .font()
+        .glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX)
+    {
+        if let Some(value) = extract_bw_image(canvas, raster, cached, advance_scale) {
+            return value;
+        }
+    }
+
     (
         *cached,
         vec![0u32; cached.width as usize * cached.height as usize],
     )
 }
 
+fn extract_color_image(
+    canvas: &mut Canvas,
+    raster: RasterGlyphImage,
+    cached: Entry,
+    scale: f32,
+) -> Option<(CacheRect, Vec<u32>)> {
+    let mut image = vec![Rgba::new(0., 0., 0., 0.); raster.width as usize * raster.height as usize];
+    match raster.format {
+        RasterImageFormat::PNG => {
+            #[cfg(feature = "png")]
+            {
+                let decoder = png::Decoder::new(std::io::Cursor::new(raster.data));
+                if let Ok(mut info) = decoder.read_info() {
+                    let mut buffer = vec![0u8; info.output_buffer_size()];
+                    if info
+                        .next_frame(bytemuck::cast_slice_mut(&mut buffer))
+                        .is_err()
+                    {
+                        return None;
+                    }
+
+                    for (rgba, out) in buffer.chunks(4).zip(image.iter_mut()) {
+                        let [r, g, b, a] = rgba.try_into().expect("Invalid chunk size");
+
+                        *out = Rgba::new(
+                            r as f32 / 255.,
+                            g as f32 / 255.,
+                            b as f32 / 255.,
+                            a as f32 / 255.,
+                        );
+                    }
+                } else {
+                    return None;
+                }
+            }
+            #[cfg(not(feature = "png"))]
+            return None;
+        }
+        RasterImageFormat::BitmapPremulBgra32 => {
+            for (y, row) in raster.data.chunks(raster.width as usize * 4).enumerate() {
+                for (x, pixel) in row.chunks(4).enumerate() {
+                    let pixel: &[u8; 4] = pixel.try_into().expect("Invalid chunk size");
+                    let [b, g, r, a] = *pixel;
+                    let b = b.saturating_mul(255 / a);
+                    let g = g.saturating_mul(255 / a);
+                    let r = r.saturating_mul(255 / a);
+
+                    image[y * raster.width as usize + x] = Rgba::new(
+                        r as f32 / 255.,
+                        g as f32 / 255.,
+                        b as f32 / 255.,
+                        a as f32 / 255.,
+                    );
+                }
+            }
+        }
+        _ => return None,
+    }
+
+    canvas.fill(
+        &Shader::Image {
+            image: Image::new(&mut image, raster.width as u32, raster.height as u32),
+            mode: SampleMode::Pad,
+        },
+        BlendMode::Source,
+        Transform::scale(
+            raster.width as f32 / cached.width as f32,
+            raster.height as f32 / raster.width as f32,
+        )
+        .then_translate((raster.x as f32 * scale, raster.y as f32 * scale).into()),
+    );
+
+    Some((*cached, canvas.pack_result()))
+}
+
+fn extract_bw_image(
+    canvas: &mut Canvas,
+    raster: RasterGlyphImage,
+    cached: Entry,
+    scale: f32,
+) -> Option<(CacheRect, Vec<u32>)> {
+    let mut image = vec![Rgba::new(0., 0., 0., 0.); raster.width as usize * raster.height as usize];
+
+    match raster.format {
+        RasterImageFormat::BitmapMono => {
+            from_gray_unpacked::<1, 2>(&mut image, raster, LUT_1);
+        }
+        RasterImageFormat::BitmapMonoPacked => {
+            from_gray_packed::<1, 2>(&mut image, raster, LUT_1);
+        }
+        RasterImageFormat::BitmapGray2 => {
+            from_gray_unpacked::<2, 4>(&mut image, raster, LUT_2);
+        }
+        RasterImageFormat::BitmapGray2Packed => {
+            from_gray_packed::<2, 4>(&mut image, raster, LUT_2);
+        }
+        RasterImageFormat::BitmapGray4 => {
+            from_gray_unpacked::<4, 16>(&mut image, raster, LUT_4);
+        }
+        RasterImageFormat::BitmapGray4Packed => {
+            from_gray_packed::<4, 16>(&mut image, raster, LUT_4);
+        }
+        RasterImageFormat::BitmapGray8 => {
+            for (byte, dst) in raster.data.iter().zip(image.iter_mut()) {
+                *dst = Rgba::new(1., 1., 1., *byte as f32 / 255.);
+            }
+        }
+        _ => return None,
+    }
+
+    canvas.fill(
+        &Shader::Image {
+            image: Image::new(&mut image, raster.width as u32, raster.height as u32),
+            mode: SampleMode::Pad,
+        },
+        BlendMode::Source,
+        Transform::scale(
+            raster.width as f32 / cached.width as f32,
+            raster.height as f32 / raster.width as f32,
+        )
+        .then_translate((raster.x as f32 * scale, raster.y as f32 * scale).into()),
+    );
+
+    Some((*cached, canvas.pack_result()))
+}
+
+fn from_gray_unpacked<const BITS: usize, const ENTRIES: usize>(
+    image: &mut [Rgba],
+    raster: RasterGlyphImage,
+    steps: [u8; ENTRIES],
+) {
+    for (bits, dst) in raster
+        .data
+        .chunks((raster.width as usize / (8 / BITS)) + 1)
+        .zip(image.chunks_mut(raster.width as usize))
+    {
+        let bits = BitSlice::<_, Lsb0>::from_slice(bits);
+        for (bits, dst) in bits.chunks(BITS).zip(dst.iter_mut()) {
+            let mut index = 0;
+            for idx in bits.iter_ones() {
+                index |= 1 << (BITS - idx - 1);
+            }
+            let value = steps[index as usize];
+            *dst = Rgba::new(1., 1., 1., value as f32 / 255.);
+        }
+    }
+}
+
+fn from_gray_packed<const BITS: usize, const ENTRIES: usize>(
+    image: &mut [Rgba],
+    raster: RasterGlyphImage,
+    steps: [u8; ENTRIES],
+) {
+    let bits = BitSlice::<_, Lsb0>::from_slice(raster.data);
+    for (bits, dst) in bits.chunks(BITS).zip(image.iter_mut()) {
+        let mut index = 0;
+        for idx in bits.iter_ones() {
+            index |= 1 << (BITS - idx - 1);
+        }
+        let value = steps[index as usize];
+        *dst = Rgba::new(1., 1., 1., value as f32 / 255.);
+    }
+}
+
+const LUT_1: [u8; 2] = [0, 255];
+const LUT_2: [u8; 4] = [0, 255 / 3, 2 * (255 / 3), 255];
+const LUT_4: [u8; 16] = [
+    0,
+    (255 / 15),
+    2 * (255 / 15),
+    3 * (255 / 15),
+    4 * (255 / 15),
+    5 * (255 / 15),
+    6 * (255 / 15),
+    7 * (255 / 15),
+    8 * (255 / 15),
+    9 * (255 / 15),
+    10 * (255 / 15),
+    11 * (255 / 15),
+    12 * (255 / 15),
+    13 * (255 / 15),
+    14 * (255 / 15),
+    255,
+];
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
 
     use ratatui::{
-        style::Stylize,
+        style::{
+            Color,
+            Stylize,
+        },
         text::Line,
         widgets::{
             Block,
             Paragraph,
         },
         Terminal,
+    };
+    use rustybuzz::ttf_parser::{
+        RasterGlyphImage,
+        RasterImageFormat,
     };
     use serial_test::serial;
     use wgpu::{
@@ -1104,13 +1326,30 @@ mod tests {
         ImageCopyBuffer,
         ImageDataLayout,
         Queue,
+        TextureFormat,
     };
 
     use crate::{
-        backend::HeadlessSurface,
-        graphics::Image,
+        backend::{
+            wgpu_backend::{
+                extract_bw_image,
+                extract_color_image,
+                LUT_2,
+                LUT_4,
+            },
+            HeadlessSurface,
+        },
+        graphics::{
+            Canvas,
+            Image,
+        },
         shaders::DefaultPostProcessor,
+        utils::text_atlas::{
+            CacheRect,
+            Entry,
+        },
         Builder,
+        Dimensions,
         Font,
     };
 
@@ -1138,19 +1377,16 @@ mod tests {
     #[test]
     #[serial]
     fn a_z() {
-        const HEIGHT: u32 = 72;
-        const WIDTH: u32 = 512;
-
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(
-                    NonZeroU32::new(HEIGHT).unwrap(),
-                    NonZeroU32::new(WIDTH).unwrap(),
-                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(512).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1197,18 +1433,16 @@ mod tests {
     #[test]
     #[serial]
     fn arabic() {
-        const WIDTH: u32 = 256;
-        const HEIGHT: u32 = 72;
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(
-                    NonZeroU32::new(HEIGHT).unwrap(),
-                    NonZeroU32::new(WIDTH).unwrap(),
-                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1255,18 +1489,15 @@ mod tests {
     #[test]
     #[serial]
     fn really_wide() {
-        const HEIGHT: u32 = 72;
-        const WIDTH: u32 = 512;
-
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(
-                    NonZeroU32::new(HEIGHT).unwrap(),
-                    NonZeroU32::new(WIDTH).unwrap(),
-                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(512).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1313,19 +1544,16 @@ mod tests {
     #[test]
     #[serial]
     fn mixed() {
-        const HEIGHT: u32 = 72;
-        const WIDTH: u32 = 512;
-
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(
-                    NonZeroU32::new(HEIGHT).unwrap(),
-                    NonZeroU32::new(WIDTH).unwrap(),
-                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(512).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1375,18 +1603,16 @@ mod tests {
     #[test]
     #[serial]
     fn mixed_colors() {
-        const HEIGHT: u32 = 72;
-        const WIDTH: u32 = 512;
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf"))
                         .expect("Invalid font file"),
                 )
-                .with_dimensions(
-                    NonZeroU32::new(HEIGHT).unwrap(),
-                    NonZeroU32::new(WIDTH).unwrap(),
-                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(512).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1440,17 +1666,15 @@ mod tests {
     #[test]
     #[serial]
     fn overlap() {
-        const HEIGHT: u32 = 72;
-        const WIDTH: u32 = 256;
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(
-                    NonZeroU32::new(HEIGHT).unwrap(),
-                    NonZeroU32::new(WIDTH).unwrap(),
-                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1532,18 +1756,15 @@ mod tests {
     #[test]
     #[serial]
     fn overlap_colors() {
-        const HEIGHT: u32 = 72;
-        const WIDTH: u32 = 256;
-
         let mut terminal = Terminal::new(
             futures_lite::future::block_on(
                 Builder::<DefaultPostProcessor>::from_font(
                     Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
                 )
-                .with_dimensions(
-                    NonZeroU32::new(HEIGHT).unwrap(),
-                    NonZeroU32::new(WIDTH).unwrap(),
-                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
                 .build_headless(),
             )
             .unwrap(),
@@ -1584,5 +1805,513 @@ mod tests {
             assert!(data == golden, "Rendered image differs from golden");
         }
         surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn rgb_conversion() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
+                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
+                .with_bg_color(Color::Rgb(0x1E, 0x23, 0x26))
+                .with_fg_color(Color::White)
+                .build_headless_with_format(TextureFormat::Rgba8Unorm),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("TEST"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image = Image::from_raw(&data);
+
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/rgb_conversion.png")).unwrap();
+
+            assert!(image == golden, "Rendered image differs from golden");
+        }
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[serial]
+    fn srgb_conversion() {
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(
+                    Font::new(include_bytes!("fonts/Fairfax.ttf")).expect("Invalid font file"),
+                )
+                .with_width_and_height(Dimensions {
+                    width: NonZeroU32::new(256).unwrap(),
+                    height: NonZeroU32::new(72).unwrap(),
+                })
+                .with_bg_color(Color::Rgb(0x1E, 0x23, 0x26))
+                .with_fg_color(Color::White)
+                .build_headless_with_format(TextureFormat::Rgba8UnormSrgb),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                let block = Block::bordered();
+                let area = block.inner(f.area());
+                f.render_widget(block, f.area());
+                f.render_widget(Paragraph::new("TEST"), area);
+            })
+            .unwrap();
+
+        let surface = &terminal.backend().surface;
+        tex2buffer(
+            &terminal.backend().device,
+            &terminal.backend().queue,
+            surface,
+        );
+        {
+            let buffer = surface.buffer.as_ref().unwrap().slice(..);
+
+            let (send, recv) = oneshot::channel();
+            buffer.map_async(wgpu::MapMode::Read, move |data| {
+                send.send(data).unwrap();
+            });
+            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            recv.recv().unwrap().unwrap();
+
+            let data = buffer.get_mapped_range();
+            let image = Image::from_raw(&data);
+
+            let (golden, _, _) =
+                Image::load_from_memory(include_bytes!("goldens/srgb_conversion.png")).unwrap();
+
+            assert!(image == golden, "Rendered image differs from golden");
+        }
+        surface.buffer.as_ref().unwrap().unmap();
+    }
+
+    #[test]
+    #[cfg(feature = "png")]
+    fn png() {
+        let (golden, width, height) =
+            Image::load_from_memory(include_bytes!("goldens/A.png")).unwrap();
+        let raster = RasterGlyphImage {
+            x: 0,
+            y: 0,
+            width: width as u16,
+            height: height as u16,
+            pixels_per_em: 0,
+            format: RasterImageFormat::PNG,
+            data: include_bytes!("goldens/A.png"),
+        };
+
+        let mut canvas = Canvas::new(width, height);
+        let extracted = extract_color_image(
+            &mut canvas,
+            raster,
+            Entry::Cached(CacheRect {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            }),
+            1.0,
+        )
+        .expect("Didn't extract png")
+        .1;
+
+        for (l, r) in bytemuck::cast_slice::<_, u8>(&extracted)
+            .chunks(4)
+            .zip(golden)
+        {
+            assert_eq!(
+                l,
+                [
+                    (r.red * 255.) as u8,
+                    (r.green * 255.) as u8,
+                    (r.blue * 255.) as u8,
+                    (r.alpha * 255.) as u8,
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn bgra() {
+        const BLUE: u8 = 2;
+        const GREEN: u8 = 4;
+        const RED: u8 = 8;
+        const ALPHA: u8 = 127;
+        let data = [BLUE, GREEN, RED, ALPHA];
+        let raster = RasterGlyphImage {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            pixels_per_em: 0,
+            format: RasterImageFormat::BitmapPremulBgra32,
+            data: &data,
+        };
+
+        let mut canvas = Canvas::new(1, 1);
+        let extracted = extract_color_image(
+            &mut canvas,
+            raster,
+            Entry::Cached(CacheRect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            }),
+            1.0,
+        )
+        .expect("Didn't extract bgra")
+        .1;
+
+        assert_eq!(
+            bytemuck::bytes_of(&extracted[0]),
+            [RED * 2, GREEN * 2, BLUE * 2, ALPHA]
+        );
+    }
+
+    #[test]
+    fn bmp1() {
+        let data0 = 0b1000_0001;
+        let data1 = 0b0001_1000;
+        let raster = RasterGlyphImage {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 2,
+            pixels_per_em: 0,
+            format: RasterImageFormat::BitmapMono,
+            data: &[data0, data1],
+        };
+
+        let mut canvas = Canvas::new(4, 2);
+        let extracted = extract_bw_image(
+            &mut canvas,
+            raster,
+            Entry::Cached(CacheRect {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 2,
+            }),
+            1.0,
+        )
+        .expect("Didn't extract bmp1")
+        .1;
+
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&extracted),
+            bytemuck::cast_slice(&[
+                [
+                    [255u8, 255, 255, 255,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                ],
+                [
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 255,],
+                ],
+            ])
+        );
+    }
+
+    #[test]
+    fn bmp1_packed() {
+        let data0 = 0b1000_0001;
+        let data1 = 0b0001_1000;
+        let raster = RasterGlyphImage {
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 2,
+            pixels_per_em: 0,
+            format: RasterImageFormat::BitmapMonoPacked,
+            data: &[data0, data1],
+        };
+
+        let mut canvas = Canvas::new(8, 2);
+        let extracted = extract_bw_image(
+            &mut canvas,
+            raster,
+            Entry::Cached(CacheRect {
+                x: 0,
+                y: 0,
+                width: 8,
+                height: 2,
+            }),
+            1.0,
+        )
+        .expect("Didn't extract bmp1")
+        .1;
+
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&extracted),
+            bytemuck::cast_slice(&[
+                [
+                    [255u8, 255, 255, 255,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 255,],
+                ],
+                [
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 255,],
+                    [255, 255, 255, 255,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                    [255, 255, 255, 0,],
+                ],
+            ])
+        );
+    }
+
+    #[test]
+    fn bmp2() {
+        let data0 = 0b1010_1101u8.reverse_bits();
+        let data1 = 0b0000_1000u8.reverse_bits();
+        let data2 = 0b0111_1010u8.reverse_bits();
+        let data3 = 0b0000_1000u8.reverse_bits();
+        let raster = RasterGlyphImage {
+            x: 0,
+            y: 0,
+            width: 6,
+            height: 2,
+            pixels_per_em: 0,
+            format: RasterImageFormat::BitmapGray2,
+            data: &[data0, data1, data2, data3],
+        };
+
+        let mut canvas = Canvas::new(6, 2);
+        let extracted = extract_bw_image(
+            &mut canvas,
+            raster,
+            Entry::Cached(CacheRect {
+                x: 0,
+                y: 0,
+                width: 6,
+                height: 2,
+            }),
+            1.0,
+        )
+        .expect("Didn't extract bmp2")
+        .1;
+
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&extracted),
+            bytemuck::cast_slice(&[
+                [
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b11],],
+                    [255, 255, 255, LUT_2[0b01],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b00],],
+                ],
+                [
+                    [255, 255, 255, LUT_2[0b01],],
+                    [255, 255, 255, LUT_2[0b11],],
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b00],],
+                ],
+            ])
+        );
+    }
+
+    #[test]
+    fn bmp2_packed() {
+        let data0 = 0b1010_1101u8.reverse_bits();
+        let data1 = 0b0000_1000u8.reverse_bits();
+        let data2 = 0b0111_1010u8.reverse_bits();
+        let data3 = 0b0000_1000u8.reverse_bits();
+        let data4 = 0b0000_1000u8.reverse_bits();
+        let data5 = 0b0000_1000u8.reverse_bits();
+        let raster = RasterGlyphImage {
+            x: 0,
+            y: 0,
+            width: 6,
+            height: 4,
+            pixels_per_em: 0,
+            format: RasterImageFormat::BitmapGray2Packed,
+            data: &[data0, data1, data2, data3, data4, data5],
+        };
+
+        let mut canvas = Canvas::new(6, 4);
+        let extracted = extract_bw_image(
+            &mut canvas,
+            raster,
+            Entry::Cached(CacheRect {
+                x: 0,
+                y: 0,
+                width: 6,
+                height: 4,
+            }),
+            1.0,
+        )
+        .expect("Didn't extract bmp2")
+        .1;
+
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&extracted),
+            bytemuck::cast_slice(&[
+                [
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b11],],
+                    [255, 255, 255, LUT_2[0b01],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b00],],
+                ],
+                [
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b01],],
+                    [255, 255, 255, LUT_2[0b11],],
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b10],],
+                ],
+                [
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b00],],
+                ],
+                [
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b00],],
+                    [255, 255, 255, LUT_2[0b10],],
+                    [255, 255, 255, LUT_2[0b00],],
+                ]
+            ])
+        );
+    }
+
+    #[test]
+    fn bmp4() {
+        let data0 = 0b1010_1000u8.reverse_bits();
+        let data1 = 0b0000_1000u8.reverse_bits();
+        let raster = RasterGlyphImage {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 2,
+            pixels_per_em: 0,
+            format: RasterImageFormat::BitmapGray4,
+            data: &[data0, data1],
+        };
+
+        let mut canvas = Canvas::new(1, 2);
+        let extracted = extract_bw_image(
+            &mut canvas,
+            raster,
+            Entry::Cached(CacheRect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 2,
+            }),
+            1.0,
+        )
+        .expect("Didn't extract bmp4")
+        .1;
+
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&extracted),
+            bytemuck::cast_slice(&[
+                [[255, 255, 255, LUT_4[0b1010],],],
+                [[255, 255, 255, LUT_4[0b0000],],],
+            ])
+        );
+    }
+
+    #[test]
+    fn bmp4_packed() {
+        let data0 = 0b1111_0001u8.reverse_bits();
+        let data1 = 0b0011_1100u8.reverse_bits();
+        let raster = RasterGlyphImage {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+            pixels_per_em: 0,
+            format: RasterImageFormat::BitmapGray4Packed,
+            data: &[data0, data1],
+        };
+
+        let mut canvas = Canvas::new(2, 2);
+        let extracted = extract_bw_image(
+            &mut canvas,
+            raster,
+            Entry::Cached(CacheRect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+            }),
+            1.0,
+        )
+        .expect("Didn't extract bmp4")
+        .1;
+
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&extracted),
+            bytemuck::cast_slice(&[
+                [
+                    [255, 255, 255, LUT_4[0b1111],],
+                    [255, 255, 255, LUT_4[0b0001],],
+                ],
+                [
+                    [255, 255, 255, LUT_4[0b0011],],
+                    [255, 255, 255, LUT_4[0b1100],],
+                ],
+            ])
+        );
     }
 }

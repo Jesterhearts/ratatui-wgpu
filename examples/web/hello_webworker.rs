@@ -14,6 +14,7 @@ use ratatui::{
 };
 use ratatui_wgpu::{
     Builder,
+    Dimensions,
     Font,
     WgpuBackend,
 };
@@ -81,10 +82,10 @@ pub async fn render_entrypoint(ptr: u32, canvas: wasm_bindgen::JsValue) {
                                 )))
                                 .unwrap(),
                             )
-                            .with_dimensions(
-                                NonZeroU32::new(canvas.height()).unwrap(),
-                                NonZeroU32::new(canvas.width()).unwrap(),
-                            )
+                            .with_width_and_height(Dimensions {
+                                width: NonZeroU32::new(canvas.width()).unwrap(),
+                                height: NonZeroU32::new(canvas.height()).unwrap(),
+                            })
                             .build_with_target(wgpu::SurfaceTarget::OffscreenCanvas(canvas))
                             .await
                             .unwrap(),

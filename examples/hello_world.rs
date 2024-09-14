@@ -11,6 +11,7 @@ use ratatui::{
 };
 use ratatui_wgpu::{
     Builder,
+    Dimensions,
     Font,
     WgpuBackend,
 };
@@ -24,10 +25,10 @@ use winit::{
     },
 };
 
-pub struct App {
+pub struct App<'d> {
     window: Option<Arc<Window>>,
-    backend: Option<Terminal<WgpuBackend<'static, 'static>>>,
-    fontdb: Database,
+    backend: Option<Terminal<WgpuBackend<'d, 'static>>>,
+    fonts: Vec<Font<'d>>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -35,17 +36,45 @@ fn main() -> anyhow::Result<()> {
 
     let event_loop = EventLoop::builder().build()?;
 
+    let mut fontdb = Database::new();
+    fontdb.load_system_fonts();
+
+    let fonts = fontdb
+        .faces()
+        .filter_map(|info| {
+            if (info.monospaced
+                || info.post_script_name.contains("Emoji")
+                || info.post_script_name.contains("emoji"))
+                && info.index == 0
+            {
+                Some(info.id)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let fonts = fonts
+        .into_iter()
+        .filter_map(|id| fontdb.with_face_data(id, |d, _| d.to_vec()))
+        .collect::<Vec<_>>();
+
+    let fonts = fonts
+        .iter()
+        .filter_map(|d| Font::new(d))
+        .collect::<Vec<_>>();
+
     let mut app = App {
         window: None,
         backend: None,
-        fontdb: Database::new(),
+        fonts,
     };
     event_loop.run_app(&mut app).unwrap();
 
     Ok(())
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler for App<'_> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         self.window = Some(Arc::new(
             event_loop
@@ -54,23 +83,6 @@ impl ApplicationHandler for App {
         ));
 
         let size = self.window.as_ref().unwrap().inner_size();
-
-        self.fontdb.load_system_fonts();
-        let fonts = self
-            .fontdb
-            .faces()
-            .filter_map(|info| {
-                if (info.monospaced
-                    || info.post_script_name.contains("Emoji")
-                    || info.post_script_name.contains("emoji"))
-                    && info.index == 0
-                {
-                    Some(info.id)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
 
         self.backend = Some(
             Terminal::new(
@@ -82,17 +94,11 @@ impl ApplicationHandler for App {
                         )))
                         .unwrap(),
                     )
-                    .with_fonts(fonts.into_iter().filter_map(|id| {
-                        // Leaking here is fine for this short program and solves a lot of lifetime
-                        // issues. Obviously don't do this in real code.
-                        self.fontdb
-                            .with_face_data(id, |d, _| Font::new(d.to_vec().leak()))
-                            .flatten()
-                    }))
-                    .with_dimensions(
-                        NonZeroU32::new(size.width).unwrap(),
-                        NonZeroU32::new(size.height).unwrap(),
-                    )
+                    .with_fonts(self.fonts.clone())
+                    .with_width_and_height(Dimensions {
+                        width: NonZeroU32::new(size.width).unwrap(),
+                        height: NonZeroU32::new(size.height).unwrap(),
+                    })
                     .build_with_target(self.window.as_ref().unwrap().clone()),
                 )
                 .unwrap(),

@@ -26,6 +26,7 @@
 //! #     Builder,
 //! #     Font,
 //! #     WgpuBackend,
+//! #     Dimensions,
 //! # };
 //! # use winit::{
 //! #     application::ApplicationHandler,
@@ -56,15 +57,13 @@
 //!             Terminal::new(
 //!                 futures_lite::future::block_on(
 //!                     Builder::from_font(
-//!                         Font::new(include_bytes!(concat!(
-//!                             "backend/fonts/CascadiaMono-Regular.ttf"
-//!                         )))
-//!                         .unwrap(),
+//!                         Font::new(include_bytes!("backend/fonts/CascadiaMono-Regular.ttf"))
+//!                             .unwrap(),
 //!                     )
-//!                     .with_dimensions(
-//!                         NonZeroU32::new(size.width).unwrap(),
-//!                         NonZeroU32::new(size.height).unwrap(),
-//!                     )
+//!                     .with_width_and_height(Dimensions {
+//!                         width: NonZeroU32::new(size.width).unwrap(),
+//!                         height: NonZeroU32::new(size.height).unwrap(),
+//!                     })
 //!                     .build_with_target(self.window.as_ref().unwrap().clone()),
 //!                 )
 //!                 .unwrap(),
@@ -164,6 +163,7 @@ type RandomState = std::hash::RandomState;
 pub use backend::{
     builder::Builder,
     wgpu_backend::WgpuBackend,
+    Dimensions,
     PostProcessor,
     RenderSurface,
     RenderTexture,

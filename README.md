@@ -32,6 +32,10 @@ The crate has the following goals in order of descending priority.
       this backend to render from a worker thread.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping, mixed bidi, and combining sequences).
+   - For color fonts (e.g. emojis) only colr v0 outlines and raster images are supported. There's an
+     optional feature flag `colr_v1` which enables support for colr v1, but you may see issues with
+     radial gradients. If you're using the regular font size this is unlikely to be an issue, but
+     it's disabled by default for this reason.
 4. Reasonable performance.
 
 ## Non-goals
@@ -52,6 +56,25 @@ The crate has the following goals in order of descending priority.
    To put that in perspective, rendering every printable ascii character in every combination of
    styles would take (95 * 4) 380 cache entries or ~10% of the cache.
 
+## Changelog
+### 1.2 -> 1.3
+- Support colr v0 and png/bitmap images in fonts, allowing emoji rendering.
+  - Switched tiny_skia -> raqote.
+  - Added skrifa.
+  - Added unicode-properties.
+  - Added png.
+- Fix an issue with incorrect handling of srgb conversion in the default shader.
+### 1.1 -> 1.2
+- Added support for rtl and mixed bidi.
+  - Switched swash -> rustybuzz.
+- Added support for combining characters.
+- Added webworker example.
+- Added colors example.
+- Added dependency on ahash.
+- Dropped dependency on coolors.
+- Dropped dependency on palette.
+- Dropped dependency on guillotiere.
+
 ## Dependencies
 This crate attempts to be reasonable with its usage of external dependencies, although it is
 definitely not minimal.
@@ -71,23 +94,29 @@ definitely not minimal.
    bubbling entries down the heap.
 6. log: Integrating with standard logging infrastructure is very useful. This might be replaced with
    tracing, but I'm not going to go without some sort of logging.
-7. raqote: I don't want to implement path stroking & filling by hand and this library supports all
+7. png (optional, default): Some fonts embed png images as raster graphics for characters. The png
+   crate is used to decode these images if they are present.
+8. raqote: I don't want to implement path stroking & filling by hand and this library supports all
    the gradient modes required to render from a font's COLR table.
-8. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
+9. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
    external dependency on some other library to do this for me. Rustybuzz happens to be (imo) the
    current best choice.
-9. thiserror: I don't want to write the Error trait by hand. I might consider removing this if doing
-   so doesn't turn out to be so bad.
-10. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
+10. skrifa: ttf_parser (used by rustybuzz) makes it difficult to directly access the data for colr
+    v0 paths and painting and instead forces you to handle colr v1 paths if they're present on the
+    font. There's currently a bug in radial gradients, making v1 not render correctly and requiring
+    me to only support v0. Skrifa makes it easy to only paint v0 paths.
+11. thiserror: I don't want to write the Error trait by hand. I might consider removing this if
+    doing so doesn't turn out to be so bad.
+12. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
     most of the code would be based on a implementation like this anyways. This performs well enough
     even though cells have to be concatenated into a single string for processing. There are smarter
     ways to to this processing I'm sure, but I'll optimize when I need to.
-11. unicode-properties: I need to check if a character is an emoji in order to know how to handle
+13. unicode-properties: I need to check if a character is an emoji in order to know how to handle
     foreground colors and bold/italic styles.
-12. unicode-width: I need to access the width of characters to figure out row layout and
+14. unicode-width: I need to access the width of characters to figure out row layout and
     implementing this myself seems silly. This is already pulled in by ratatui, so it doesn't really
     increase the size of the dependency tree.
-13. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
+15. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
 
 [Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=flat-square
 [Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=flat-square

@@ -151,7 +151,7 @@ impl<'f, 'd, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd> {
                 let p1 = Point::new(grad.x1, grad.y1);
                 let p2 = Point::new(grad.x2, grad.y2);
 
-                if p0 == p1 || p0 == p2 {
+                if p0 == p1 {
                     return;
                 }
 
@@ -190,21 +190,19 @@ impl<'f, 'd, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd> {
                     .collect::<Vec<_>>();
                 stops.sort_by(|l, r| l.offset.total_cmp(&r.offset));
 
-                let p0 = Point::new(grad.x0, grad.y0);
-                let p1 = Point::new(grad.x1, grad.y1);
-                let r0 = grad.r0;
-                let r1 = grad.r1;
+                let c0 = Point::new(grad.x0, grad.y0);
+                let c1 = Point::new(grad.x1, grad.y1);
 
-                if p0 == p1 && r0 == r1 {
+                if c0 == c1 && grad.r0 == grad.r1 {
                     return;
                 }
 
                 Shader::ConicalGradient {
                     stops,
-                    c0: p0,
-                    r0,
-                    c1: p1,
-                    r1,
+                    c0,
+                    r0: grad.r0,
+                    c1,
+                    r1: grad.r1,
                     mode: match grad.extend {
                         rustybuzz::ttf_parser::colr::GradientExtend::Pad => SampleMode::Pad,
                         rustybuzz::ttf_parser::colr::GradientExtend::Repeat => SampleMode::Repeat,

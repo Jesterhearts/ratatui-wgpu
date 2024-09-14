@@ -20,7 +20,7 @@ var Sampler: sampler;
 struct Uniforms {
     screen_size: vec2<f32>,
     use_srgb: u32,
-    _pad0: vec3<u32>,
+    _pad1: vec3<u32>,
 }
 
 @group(0) @binding(2)
@@ -31,5 +31,5 @@ fn fs_main(@builtin(position) gl_Position: vec4<f32>) -> FragmentOutput {
     let uv = gl_Position.xy / uniforms.screen_size;
     let factor = select(2.2, 1.0, uniforms.use_srgb == 0);
 
-    return FragmentOutput(pow(textureSample(Texture, Sampler, uv), vec4(factor)));
+    return FragmentOutput(pow(textureSample(Texture, Sampler, uv), vec4(vec3(factor), 1.0)));
 }

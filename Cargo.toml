@@ -1,7 +1,7 @@
 [package]
 license      = "MIT OR Apache-2.0"
 name         = "ratatui-wgpu"
-version      = "0.1.2"
+version      = "0.1.3"
 edition      = "2021"
 rust-version = "1.75.0"
 repository   = "https://github.com/Jesterhearts/ratatui-wgpu"
@@ -9,10 +9,11 @@ description  = "A wgpu based backend for ratatui."
 keywords     = [ "wasm", "tui", "rendering" ]
 
 [features]
-default         = [ "ahash", "underline-color" ]
-ahash           = [ "dep:ahash" ]
-underline-color = [ "ratatui/underline-color" ]
-web             = [ "wgpu/webgl" ]
+default = [ "ahash", "png" ]
+ahash   = [ "dep:ahash" ]
+colr_v1 = [  ]
+png     = [ "dep:png" ]
+web     = [ "wgpu/webgl" ]
 
 [[example]]
 name              = "hello_web"
@@ -27,13 +28,15 @@ required-features = [ "web" ]
 [dependencies]
 ahash              = { version = "0.8.11", default-features = false, features = [ "std", "compile-time-rng" ], optional = true }
 bitvec             = { version = "1.0.1", default-features = false, features = [ "std" ] }
-bytemuck           = { version = "1.17.0", features = [ "derive" ] }
-indexmap           = { version = "2.4.0", default-features = false, features = [ "std" ] }
+bytemuck           = { version = "1.18.0", features = [ "derive" ] }
+indexmap           = { version = "2.5.0", default-features = false, features = [ "std" ] }
 log                = { version = "0.4.22", default-features = false }
 lyon_path          = "1.0.5"
 palette            = { version = "0.7.6", default-features = false, features = [ "std" ] }
+png                = { version = "0.17.13", optional = true }
 ratatui            = { version = "0.28.0", default-features = false }
 rustybuzz          = "0.18.0"
+skrifa             = "0.22.0"
 thiserror          = "1.0.63"
 unicode-bidi       = "0.3.15"
 unicode-properties = "0.1.2"
@@ -42,17 +45,16 @@ web-time           = "1.1.0"
 wgpu               = "22.1.0"
 
 [dev-dependencies]
-anyhow                   = "1.0.86"
+anyhow                   = "1.0.87"
 chrono                   = "0.4.38"
 console_error_panic_hook = "0.1.7"
 console_log              = "1.0.0"
 crossbeam-queue          = "0.3.11"
 env_logger               = "0.11.5"
-fontdb                   = "0.21.0"
+fontdb                   = "0.22.0"
 futures-lite             = "2.3.0"
 js-sys                   = "0.3.70"
 oneshot                  = "0.1.8"
-png                      = "0.17.13"
 serial_test              = "3.1.1"
 wasm-bindgen             = "0.2"
 wasm-bindgen-futures     = "0.4.42"

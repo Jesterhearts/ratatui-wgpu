@@ -53,9 +53,8 @@ use crate::backend::PostProcessor;
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Debug, Clone, Copy)]
 struct Uniforms {
     screen_size: [f32; 2],
-    _pad0: [f32; 2],
     use_srgb: u32,
-    _pad1: [u32; 3],
+    _pad0: [u32; 5],
 }
 
 /// The default post-processor. Used when you don't want to perform any custom
@@ -218,9 +217,8 @@ impl PostProcessor for DefaultPostProcessor {
                 .unwrap();
             uniforms.copy_from_slice(bytemuck::bytes_of(&Uniforms {
                 screen_size: [surface_config.width as f32, surface_config.height as f32],
-                _pad0: [0.; 2],
                 use_srgb: u32::from(surface_config.format.is_srgb()),
-                _pad1: [0; 3],
+                _pad0: [0; 5],
             }));
         }
 
