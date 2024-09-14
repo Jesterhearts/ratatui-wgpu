@@ -1180,7 +1180,7 @@ fn extract_color_image(
         BlendMode::Source,
         Transform::scale(
             raster.width as f32 / cached.width as f32,
-            raster.height as f32 / raster.width as f32,
+            raster.height as f32 / cached.height as f32,
         )
         .then_translate((raster.x as f32 * scale, raster.y as f32 * scale).into()),
     );
@@ -1231,7 +1231,7 @@ fn extract_bw_image(
         BlendMode::Source,
         Transform::scale(
             raster.width as f32 / cached.width as f32,
-            raster.height as f32 / raster.width as f32,
+            raster.height as f32 / cached.height as f32,
         )
         .then_translate((raster.x as f32 * scale, raster.y as f32 * scale).into()),
     );
