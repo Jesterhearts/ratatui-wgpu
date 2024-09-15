@@ -32,10 +32,7 @@ The crate has the following goals in order of descending priority.
       this backend to render from a worker thread.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping, mixed bidi, and combining sequences).
-   - For color fonts (e.g. emojis) only colr v0 outlines and raster images are supported. There's an
-     optional feature flag `colr_v1` which enables support for colr v1, but you may see issues with
-     radial gradients. If you're using the regular font size this is unlikely to be an issue, but
-     it's disabled by default for this reason.
+   - For color fonts (e.g. emojis) only colr v0 & v1 outlines and raster images are supported.
 4. Reasonable performance.
 
 ## Non-goals
@@ -57,6 +54,12 @@ The crate has the following goals in order of descending priority.
    styles would take (95 * 4) 380 cache entries or ~10% of the cache.
 
 ## Changelog
+### 1.3 -> 1.4
+- Support colr v1.
+  - Drop skrifa.
+- Deprecate `with_dimensions` and replace with `with_width_and_height`.
+  - The order of arguments (height, width) to `with_dimensions` was confusing. The new function
+    takes in a struct which explicitly specifies width & height.
 ### 1.2 -> 1.3
 - Support colr v0 and png/bitmap images in fonts, allowing emoji rendering.
   - Switched tiny_skia -> raqote.
@@ -101,22 +104,18 @@ definitely not minimal.
 9. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
    external dependency on some other library to do this for me. Rustybuzz happens to be (imo) the
    current best choice.
-10. skrifa: ttf_parser (used by rustybuzz) makes it difficult to directly access the data for colr
-    v0 paths and painting and instead forces you to handle colr v1 paths if they're present on the
-    font. There's currently a bug in radial gradients, making v1 not render correctly and requiring
-    me to only support v0. Skrifa makes it easy to only paint v0 paths.
-11. thiserror: I don't want to write the Error trait by hand. I might consider removing this if
+10. thiserror: I don't want to write the Error trait by hand. I might consider removing this if
     doing so doesn't turn out to be so bad.
-12. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
+11. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
     most of the code would be based on a implementation like this anyways. This performs well enough
     even though cells have to be concatenated into a single string for processing. There are smarter
     ways to to this processing I'm sure, but I'll optimize when I need to.
-13. unicode-properties: I need to check if a character is an emoji in order to know how to handle
+12. unicode-properties: I need to check if a character is an emoji in order to know how to handle
     foreground colors and bold/italic styles.
-14. unicode-width: I need to access the width of characters to figure out row layout and
+13. unicode-width: I need to access the width of characters to figure out row layout and
     implementing this myself seems silly. This is already pulled in by ratatui, so it doesn't really
     increase the size of the dependency tree.
-15. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
+14. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
 
 [Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=flat-square
 [Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=flat-square
