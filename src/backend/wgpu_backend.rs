@@ -1920,7 +1920,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "png")]
     fn png() {
         let (golden, width, height) =
             Image::load_from_memory(include_bytes!("goldens/A.png")).unwrap();
