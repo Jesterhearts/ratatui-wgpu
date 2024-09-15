@@ -40,13 +40,10 @@ use rustybuzz::{
         GlyphId,
         RasterGlyphImage,
         RasterImageFormat,
+        RgbaColor,
     },
     GlyphBuffer,
     UnicodeBuffer,
-};
-use skrifa::{
-    instance::Location,
-    MetadataProvider,
 };
 use unicode_bidi::{
     Level,
@@ -680,7 +677,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 
                         let (rect, image) = rasterize_glyph(
                             cached,
-                            font,
+                            metrics,
                             info,
                             fake_italic & !is_emoji,
                             fake_bold & !is_emoji,
@@ -999,7 +996,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 
 fn rasterize_glyph(
     cached: Entry,
-    font: &Font,
+    metrics: &rustybuzz::Face,
     info: &rustybuzz::GlyphInfo,
     fake_italic: bool,
     fake_bold: bool,
@@ -1025,86 +1022,65 @@ fn rasterize_glyph(
     };
 
     let mut image = vec![0u32; cached.width as usize * 2 * cached.height as usize * 2];
+    let mut target = DrawTarget::from_backing(
+        cached.width as i32 * 2,
+        cached.height as i32 * 2,
+        &mut image[..],
+    );
 
-    let glyph = if cfg!(feature = "colr_v1") {
-        font.skrifa()
-            .color_glyphs()
-            .get(skrifa::GlyphId::new(info.glyph_id))
-    } else {
-        font.skrifa().color_glyphs().get_with_format(
-            skrifa::GlyphId::new(info.glyph_id),
-            skrifa::color::ColorGlyphFormat::ColrV0,
+    let mut painter = Painter::new(
+        metrics,
+        &mut target,
+        skew,
+        scale,
+        metrics.ascender() as f32 * scale + computed_offset_y,
+        computed_offset_x,
+    );
+    if metrics
+        .paint_color_glyph(
+            GlyphId(info.glyph_id as _),
+            0,
+            RgbaColor::new(255, 255, 255, 255),
+            &mut painter,
         )
-    };
-
-    if let Some(glyph) = glyph {
-        let mut target = DrawTarget::from_backing(
-            cached.width as i32 * 2,
-            cached.height as i32 * 2,
-            &mut image[..],
+        .is_some()
+    {
+        let mut final_image = DrawTarget::new(cached.width as i32, cached.height as i32);
+        final_image.draw_image_with_size_at(
+            cached.width as f32,
+            cached.height as f32,
+            0.,
+            0.,
+            &raqote::Image {
+                width: cached.width as i32 * 2,
+                height: cached.height as i32 * 2,
+                data: &image,
+            },
+            &DrawOptions {
+                blend_mode: raqote::BlendMode::Src,
+                antialias: raqote::AntialiasMode::None,
+                ..Default::default()
+            },
         );
 
-        let mut painter = Painter::new(
-            font,
-            &mut target,
-            skew,
-            scale,
-            font.font().ascender() as f32 * scale + computed_offset_y,
-            computed_offset_x,
-        );
-        if glyph.paint(&Location::default(), &mut painter).is_ok() {
-            let mut final_image = DrawTarget::new(cached.width as i32, cached.height as i32);
-            final_image.draw_image_with_size_at(
-                cached.width as f32,
-                cached.height as f32,
-                0.,
-                0.,
-                &raqote::Image {
-                    width: cached.width as i32 * 2,
-                    height: cached.height as i32 * 2,
-                    data: &image,
-                },
-                &DrawOptions {
-                    blend_mode: raqote::BlendMode::Src,
-                    antialias: raqote::AntialiasMode::None,
-                    ..Default::default()
-                },
-            );
-
-            let mut final_image = final_image.into_vec();
-            for argb in final_image.iter_mut() {
-                let [a, r, g, b] = argb.to_be_bytes();
-                *argb = u32::from_le_bytes([r, g, b, a]);
-            }
-
-            return (*cached, final_image);
+        let mut final_image = final_image.into_vec();
+        for argb in final_image.iter_mut() {
+            let [a, r, g, b] = argb.to_be_bytes();
+            *argb = u32::from_le_bytes([r, g, b, a]);
         }
+
+        return (*cached, final_image);
     }
 
-    if let Some(raster) = font
-        .font()
-        .glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX)
-    {
+    if let Some(raster) = metrics.glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX) {
         if let Some(value) = extract_color_image(&mut image, raster, cached, advance_scale) {
             return value;
         }
     }
 
     let mut render = Outline::default();
-    // Why do we use rustybuzz instead of skrifa here? Because if the glyph has
-    // funky negative bounds (as can sometimes happen - more below), skrifa doesn't
-    // generate a path at all! Rustybuzz does the right thing and just gives us a
-    // path which is entirely negative.
-    if let Some(bounds) = font
-        .font()
-        .outline_glyph(GlyphId(info.glyph_id as _), &mut render)
-    {
+    if let Some(bounds) = metrics.outline_glyph(GlyphId(info.glyph_id as _), &mut render) {
         let path = render.finish();
-        let mut target = DrawTarget::from_backing(
-            cached.width as i32 * 2,
-            cached.height as i32 * 2,
-            &mut image[..],
-        );
 
         // Some fonts return bounds that are entirely negative. I'm not sure why this
         // is, but it means the glyph won't render at all. We check for this here and
@@ -1115,8 +1091,13 @@ fn rasterize_glyph(
             0.
         };
         let x_off = x_off * scale + computed_offset_x;
-        let y_off = font.font().ascender() as f32 * scale + computed_offset_y;
+        let y_off = metrics.ascender() as f32 * scale + computed_offset_y;
 
+        let mut target = DrawTarget::from_backing(
+            cached.width as i32 * 2,
+            cached.height as i32 * 2,
+            &mut image[..],
+        );
         target.set_transform(
             &Transform::scale(scale, -scale)
                 .then(&skew)
@@ -1162,10 +1143,7 @@ fn rasterize_glyph(
         return (*cached, final_image.into_vec());
     }
 
-    if let Some(raster) = font
-        .font()
-        .glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX)
-    {
+    if let Some(raster) = metrics.glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX) {
         if let Some(value) = extract_bw_image(&mut image, raster, cached, advance_scale) {
             return value;
         }
