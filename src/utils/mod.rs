@@ -72,7 +72,7 @@ pub(crate) struct Painter<'f, 'd> {
     font: &'f rustybuzz::Face<'d>,
     target: &'f mut Canvas,
     skew: Transform,
-    outline: Path,
+    outline: Option<Path>,
     scale: f32,
     y_offset: f32,
     x_offset: f32,
@@ -92,7 +92,7 @@ impl<'f, 'd> Painter<'f, 'd> {
             font,
             target,
             skew,
-            outline: Path::new(),
+            outline: None,
             scale,
             y_offset,
             x_offset,
@@ -103,6 +103,12 @@ impl<'f, 'd> Painter<'f, 'd> {
     fn compute_transform(&self) -> Transform {
         self.transforms
             .iter()
+            // Applying the pushed transforms in reverse order empirically produces the correct
+            // result. I can find no indication in the documentation of any font parsing crate nor
+            // in the documention for the colr tables indicating that this is the expected way to
+            // apply these transforms. It's possible I missed something (possibly this has to do
+            // with the fact that layers are specified from the bottom up?).
+            .rev()
             .fold(Transform::default(), |tfm, t| {
                 tfm.then(&Transform::new(t.a, t.b, t.c, t.d, t.e, t.f))
             })
@@ -115,16 +121,20 @@ impl<'f, 'd> Painter<'f, 'd> {
 impl<'f, 'd, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd> {
     fn outline_glyph(&mut self, glyph_id: rustybuzz::ttf_parser::GlyphId) {
         let mut outline = Outline::default();
-        if self.font.outline_glyph(glyph_id, &mut outline).is_some() {
-            self.outline = outline.finish().transformed(&self.compute_transform());
-        }
+        self.outline = self
+            .font
+            .outline_glyph(glyph_id, &mut outline)
+            .map(|_| outline.finish().transformed(&self.compute_transform()));
     }
 
-    /// The documentation for this function implies that you should use the
-    /// ouline stored from `outline_glyph`, but _actually_ you should be filling
-    /// the clipped path with whatever paint is provided.
-    /// See skrifa's [`ColorPainter`](https://docs.rs/skrifa/latest/skrifa/color/trait.ColorPainter.html)
-    /// for correct documentation.
+    /// The documentation for this states "Paint the stored outline using the
+    /// provided color", but this is only true for colr v0 outlines. For colr
+    /// v1, the outline will have been pushed using `push_clip`, and we
+    /// should instead fill the clipped region with the provided paint. We
+    /// handle this by storing the outline in an optional, which will be taken
+    /// from during the `push_clip` operation, leaving it empty. This way we
+    /// know if the outline is present that we are supposed to paint the
+    /// path directly.
     fn paint(&mut self, paint: rustybuzz::ttf_parser::colr::Paint<'a>) {
         let shader = match paint {
             rustybuzz::ttf_parser::colr::Paint::Solid(color) => Shader::Solid(
@@ -240,6 +250,10 @@ impl<'f, 'd, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd> {
             }
         };
 
+        if let Some(outline) = self.outline.take() {
+            self.target.push_clip(&outline);
+        }
+
         self.target.fill(
             &shader,
             BlendMode::default(),
@@ -248,7 +262,8 @@ impl<'f, 'd, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd> {
     }
 
     fn push_clip(&mut self) {
-        self.target.push_clip(&self.outline);
+        self.target
+            .push_clip(&self.outline.take().unwrap_or_default());
     }
 
     fn push_clip_box(&mut self, clipbox: rustybuzz::ttf_parser::colr::ClipBox) {
