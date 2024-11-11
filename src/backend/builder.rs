@@ -591,7 +591,7 @@ fn build_text_bg_compositor(device: &Device, screen_size: &Buffer) -> TextCacheB
         layout: Some(&pipeline_layout),
         vertex: VertexState {
             module: &shader,
-            entry_point: "vs_main",
+            entry_point: Some("vs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             buffers: &[VertexBufferLayout {
                 array_stride: size_of::<TextBgVertexMember>() as u64,
@@ -607,7 +607,7 @@ fn build_text_bg_compositor(device: &Device, screen_size: &Buffer) -> TextCacheB
         multisample: MultisampleState::default(),
         fragment: Some(FragmentState {
             module: &shader,
-            entry_point: "fs_main",
+            entry_point: Some("fs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
                 format: TextureFormat::Rgba8Unorm,
@@ -734,7 +734,7 @@ fn build_text_fg_compositor(
         layout: Some(&pipeline_layout),
         vertex: VertexState {
             module: &shader,
-            entry_point: "vs_main",
+            entry_point: Some("vs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             buffers: &[VertexBufferLayout {
                 array_stride: size_of::<TextVertexMember>() as u64,
@@ -750,7 +750,7 @@ fn build_text_fg_compositor(
         multisample: MultisampleState::default(),
         fragment: Some(FragmentState {
             module: &shader,
-            entry_point: "fs_main",
+            entry_point: Some("fs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
                 format: TextureFormat::Rgba8Unorm,
