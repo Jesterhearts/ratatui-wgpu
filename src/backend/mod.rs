@@ -126,7 +126,7 @@ mod private {
 
     pub struct Token;
 
-    impl<'s> Sealed for Surface<'s> {}
+    impl Sealed for Surface<'_> {}
     impl Sealed for HeadlessSurface {}
     impl Sealed for RenderTarget {}
     impl Sealed for HeadlessTarget {}

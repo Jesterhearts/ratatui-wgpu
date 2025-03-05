@@ -112,7 +112,7 @@ impl<'f, 'd, 'p> Painter<'f, 'd, 'p> {
     }
 }
 
-impl<'f, 'd, 'p, 'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'f, 'd, 'p> {
+impl<'a> rustybuzz::ttf_parser::colr::Painter<'a> for Painter<'_, '_, '_> {
     fn outline_glyph(&mut self, glyph_id: rustybuzz::ttf_parser::GlyphId) {
         let mut outline = Outline::default();
         self.outline = self

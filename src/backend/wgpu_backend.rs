@@ -72,8 +72,6 @@ use wgpu::{
     CommandEncoderDescriptor,
     Device,
     Extent3d,
-    ImageCopyTexture,
-    ImageDataLayout,
     IndexFormat,
     LoadOp,
     Operations,
@@ -403,7 +401,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
     }
 }
 
-impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f, 's, P, S> {
+impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's, P, S> {
     fn draw<'a, I>(&mut self, content: I) -> std::io::Result<()>
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
@@ -770,7 +768,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
 
         for (_, (cached, image, mask)) in pending_cache_updates {
             self.queue.write_texture(
-                ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &self.text_cache,
                     mip_level: 0,
                     origin: Origin3d {
@@ -781,7 +779,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     aspect: TextureAspect::All,
                 },
                 bytemuck::cast_slice(&image),
-                ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(cached.width * size_of::<u32>() as u32),
                     rows_per_image: Some(cached.height),
@@ -794,7 +792,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
             );
 
             self.queue.write_texture(
-                ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &self.text_mask,
                     mip_level: 0,
                     origin: Origin3d {
@@ -805,7 +803,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                     aspect: TextureAspect::All,
                 },
                 &vec![if mask { 255 } else { 0 }; (cached.width * cached.height) as usize],
-                ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(cached.width),
                     rows_per_image: Some(cached.height),
@@ -915,7 +913,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'f,
                         let uvx = cached.x + offset_x;
                         let uvy = cached.y;
 
-                        let underline_pos = (*underline_pos_min as u32 + uvy) << 16
+                        let underline_pos = ((*underline_pos_min as u32 + uvy) << 16)
                             | (*underline_pos_max as u32 + uvy);
 
                         // 0
@@ -1381,8 +1379,6 @@ mod tests {
         CommandEncoderDescriptor,
         Device,
         Extent3d,
-        ImageCopyBuffer,
-        ImageDataLayout,
         Queue,
         TextureFormat,
     };
@@ -1410,9 +1406,9 @@ mod tests {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
         encoder.copy_texture_to_buffer(
             surface.texture.as_ref().unwrap().as_image_copy(),
-            ImageCopyBuffer {
+            wgpu::TexelCopyBufferInfo {
                 buffer: surface.buffer.as_ref().unwrap(),
-                layout: ImageDataLayout {
+                layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(surface.buffer_width),
                     rows_per_image: Some(surface.height),
