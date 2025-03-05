@@ -54,8 +54,9 @@ The crate has the following goals in order of descending priority.
    styles would take (95 * 4) 380 cache entries or ~10% of the cache.
 
 ## Changelog
-### 1.4 -> 1.5
-- Upgrade ratatui and wgpu
+### 1.4 -> 2.0
+- Upgrade ratatui and wgpu.
+- Remove deprecated apis.
 ### 1.3 -> 1.4
 - Support colr v1.
   - Drop skrifa.

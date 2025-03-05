@@ -263,17 +263,6 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
     /// Use the specified height and width when creating the surface. Defaults
     /// to 1x1.
     #[must_use]
-    #[doc(hidden)]
-    #[deprecated = "The arguments for this are in a confusing order. Use with_width_and_height."]
-    pub fn with_dimensions(mut self, height: NonZeroU32, width: NonZeroU32) -> Self {
-        self.height = height;
-        self.width = width;
-        self
-    }
-
-    /// Use the specified height and width when creating the surface. Defaults
-    /// to 1x1.
-    #[must_use]
     pub fn with_width_and_height(mut self, dimensions: Dimensions) -> Self {
         self.width = dimensions.width;
         self.height = dimensions.height;

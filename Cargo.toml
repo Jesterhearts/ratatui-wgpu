@@ -1,7 +1,7 @@
 [package]
 license      = "MIT OR Apache-2.0"
 name         = "ratatui-wgpu"
-version      = "0.1.5"
+version      = "0.2.0"
 edition      = "2021"
 rust-version = "1.75.0"
 repository   = "https://github.com/Jesterhearts/ratatui-wgpu"
@@ -11,8 +11,6 @@ keywords     = [ "wasm", "tui", "rendering" ]
 [features]
 default = [ "ahash", "png" ]
 ahash   = [ "dep:ahash" ]
-# This feature is deprecated and will be removed. It currently does nothing.
-colr_v1 = [  ]
 png     = [ "dep:png" ]
 web     = [ "wgpu/webgl" ]
 

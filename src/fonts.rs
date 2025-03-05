@@ -96,23 +96,6 @@ impl<'a> Fonts<'a> {
         self.char_height
     }
 
-    /// The maximum width (in pixels) across all fonts.
-    #[inline]
-    #[deprecated(
-        since = "0.1.3",
-        note = "This dynamically computes the max width. It will be removed in 0.2.0. File a bug with your usecase if this would affect you."
-    )]
-    pub fn width_px(&self) -> u32 {
-        std::iter::once(&self.last_resort)
-            .chain(self.regular.iter())
-            .chain(self.bold.iter())
-            .chain(self.italic.iter())
-            .chain(self.bold_italic.iter())
-            .map(|font| font.char_width(self.char_height))
-            .max()
-            .unwrap_or_default()
-    }
-
     /// Change the height of all fonts in this collection to the specified
     /// height in pixels.
     pub fn set_size_px(&mut self, height_px: u32) {
