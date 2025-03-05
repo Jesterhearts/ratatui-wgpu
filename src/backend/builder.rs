@@ -325,7 +325,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
         target: impl Into<SurfaceTarget<'s>>,
     ) -> Result<WgpuBackend<'a, 's, P>> {
         let instance = self.instance.get_or_insert_with(|| {
-            wgpu::Instance::new(InstanceDescriptor {
+            wgpu::Instance::new(&InstanceDescriptor {
                 backends: Backends::default(),
                 flags: InstanceFlags::default(),
                 ..Default::default()
@@ -371,7 +371,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
         mut surface: S,
     ) -> Result<WgpuBackend<'a, 's, P, S>> {
         let instance = self.instance.get_or_insert_with(|| {
-            wgpu::Instance::new(InstanceDescriptor {
+            wgpu::Instance::new(&InstanceDescriptor {
                 backends: Backends::default(),
                 flags: InstanceFlags::default(),
                 ..Default::default()
