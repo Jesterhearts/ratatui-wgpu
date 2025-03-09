@@ -53,13 +53,16 @@ use crate::backend::PostProcessor;
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Debug, Clone, Copy)]
 struct Uniforms {
     screen_size: [f32; 2],
+    preserve_aspect: u32,
     use_srgb: u32,
-    _pad0: [u32; 5],
 }
 
 /// The default post-processor. Used when you don't want to perform any custom
 /// shading on the output. This just blits the composited text to the surface.
-pub struct DefaultPostProcessor {
+/// This will stretch characters if the render area size falls between multiples
+/// of the character size. Use `AspectPreservingDefaultPostProcessor` if you
+/// don't want this behavior.
+pub struct DefaultPostProcessor<const PRESERVE_ASPECT: bool = false> {
     uniforms: Buffer,
     bindings: BindGroupLayout,
     sampler: Sampler,
@@ -68,7 +71,11 @@ pub struct DefaultPostProcessor {
     blitter: RenderBundle,
 }
 
-impl PostProcessor for DefaultPostProcessor {
+/// A default post-processor which preserves the aspect ratio of characters when
+/// the render area size falls in between multiples of the character size.
+pub type AspectPreservingDefaultPostProcessor = DefaultPostProcessor<true>;
+
+impl<const PRESERVE_ASPECT: bool> PostProcessor for DefaultPostProcessor<PRESERVE_ASPECT> {
     type UserData = ();
 
     fn compile(
@@ -217,8 +224,8 @@ impl PostProcessor for DefaultPostProcessor {
                 .unwrap();
             uniforms.copy_from_slice(bytemuck::bytes_of(&Uniforms {
                 screen_size: [surface_config.width as f32, surface_config.height as f32],
+                preserve_aspect: u32::from(PRESERVE_ASPECT),
                 use_srgb: u32::from(surface_config.format.is_srgb()),
-                _pad0: [0; 5],
             }));
         }
 

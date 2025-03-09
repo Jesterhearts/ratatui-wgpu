@@ -21,10 +21,10 @@ struct FragmentOutput {
 
 fn unpack_color(color: u32) -> vec4<f32> {
     return vec4<f32>(
-        f32(color >> 24) / 255.0,
-        f32((color >> 16) & 0xFF) / 255.0,
-        f32((color >> 8) & 0xFF) / 255.0,
-        f32(color & 0xFF) / 255.0,
+        f32(color >> 24u) / 255.0,
+        f32((color >> 16u) & 0xFFu) / 255.0,
+        f32((color >> 8u) & 0xFFu) / 255.0,
+        f32(color & 0xFFu) / 255.0,
     );
 }
 

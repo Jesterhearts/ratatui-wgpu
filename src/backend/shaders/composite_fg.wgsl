@@ -37,10 +37,10 @@ var<uniform> AtlasSize: vec4<f32>;
 
 fn unpack_color(color: u32) -> vec4<f32> {
     return vec4<f32>(
-        f32(color >> 24) / 255.0,
-        f32((color >> 16) & 0xFF) / 255.0,
-        f32((color >> 8) & 0xFF) / 255.0,
-        f32(color & 0xFF) / 255.0,
+        f32(color >> 24u) / 255.0,
+        f32((color >> 16u) & 0xFFu) / 255.0,
+        f32((color >> 8u) & 0xFFu) / 255.0,
+        f32(color & 0xFFu) / 255.0,
     );
 }
 
@@ -65,8 +65,8 @@ fn fs_main(
 
     var fgColor = select(fgColorUnpacked, textureColor, mask.r == 1.0);
 
-    let yMax = UnderlinePos & 0xFFFF;
-    let yMin = UnderlinePos >> 16;
+    let yMax = UnderlinePos & 0xFFFFu;
+    let yMin = UnderlinePos >> 16u;
     fgColor = select(fgColor, underLineColorUnpacked, u32(UV.y) >= yMin && u32(UV.y) < yMax);
 
     return FragmentOutput(fgColor);

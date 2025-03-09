@@ -10,6 +10,7 @@ use ratatui::{
     widgets::*,
 };
 use ratatui_wgpu::{
+    shaders::AspectPreservingDefaultPostProcessor,
     Builder,
     Dimensions,
     Font,
@@ -27,7 +28,7 @@ use winit::{
 
 pub struct App<'d> {
     window: Option<Arc<Window>>,
-    backend: Option<Terminal<WgpuBackend<'d, 'static>>>,
+    backend: Option<Terminal<WgpuBackend<'d, 'static, AspectPreservingDefaultPostProcessor>>>,
     fonts: Vec<Font<'d>>,
 }
 
