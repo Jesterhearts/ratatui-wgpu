@@ -1,7 +1,7 @@
 [package]
 license      = "MIT OR Apache-2.0"
 name         = "ratatui-wgpu"
-version      = "0.2.0"
+version      = "0.2.1"
 edition      = "2021"
 rust-version = "1.75.0"
 repository   = "https://github.com/Jesterhearts/ratatui-wgpu"
@@ -28,7 +28,7 @@ required-features = [ "web" ]
 ahash              = { version = "0.8.11", default-features = false, features = [ "std", "compile-time-rng" ], optional = true }
 bitvec             = { version = "1.0.1", default-features = false, features = [ "std" ] }
 bytemuck           = { version = "1.19.0", features = [ "derive" ] }
-indexmap           = { version = "2.6.0", default-features = false, features = [ "std" ] }
+indexmap           = { version = "2.8.0", default-features = false, features = [ "std" ] }
 log                = { version = "0.4.22", default-features = false }
 png                = { version = "0.17.14", optional = true }
 raqote             = { version = "0.8.5", default-features = false }
@@ -47,7 +47,7 @@ chrono                   = "0.4.38"
 console_error_panic_hook = "0.1.7"
 console_log              = "1.0.0"
 crossbeam-queue          = "0.3.11"
-env_logger               = "0.11.5"
+env_logger               = "0.11.7"
 fontdb                   = "0.23.0"
 futures-lite             = "2.5.0"
 image                    = { version = "0.25.5", default-features = false, features = [ "png" ] }
