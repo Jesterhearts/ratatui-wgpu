@@ -1464,7 +1464,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1525,7 +1529,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1585,7 +1593,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1649,7 +1661,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1717,7 +1733,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1777,7 +1797,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1817,7 +1841,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1877,7 +1905,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1938,7 +1970,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
@@ -1999,7 +2035,11 @@ mod tests {
             buffer.map_async(wgpu::MapMode::Read, move |data| {
                 send.send(data).unwrap();
             });
-            terminal.backend().device.poll(wgpu::MaintainBase::Wait);
+            terminal
+                .backend()
+                .device
+                .poll(wgpu::MaintainBase::Wait)
+                .unwrap();
             recv.recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();

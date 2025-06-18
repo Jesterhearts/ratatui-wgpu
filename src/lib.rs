@@ -144,8 +144,8 @@ pub enum Error {
     SurfaceCreationFailed(wgpu::CreateSurfaceError),
     /// Backend creation failed because wgpu didn't provide an
     /// [`Adapter`](wgpu::Adapter)
-    #[error("Failed to get the Adapter from wgpu.")]
-    AdapterRequestFailed,
+    #[error("{0}")]
+    AdapterRequestFailed(wgpu::RequestAdapterError),
     /// Backend creation failed because the default surface configuration
     /// couldn't be loaded.
     #[error("Failed to get default Surface configuration from wgpu.")]

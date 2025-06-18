@@ -382,7 +382,7 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
                 ..Default::default()
             })
             .await
-            .ok_or(Error::AdapterRequestFailed)?;
+            .map_err(Error::AdapterRequestFailed)?;
 
         let limits = if let Some(limits) = self.limits {
             min_limits(&adapter, limits)
@@ -391,13 +391,10 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
         };
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    required_limits: limits.clone(),
-                    ..Default::default()
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                required_limits: limits.clone(),
+                ..Default::default()
+            })
             .await
             .map_err(Error::DeviceRequestFailed)?;
 
@@ -805,6 +802,9 @@ fn min_limits(adapter: &wgpu::Adapter, limits: Limits) -> Limits {
         max_subgroup_size: max_subgroup_size_wl,
         max_push_constant_size: max_push_constant_size_wl,
         max_non_sampler_bindings: max_non_sampler_bindings_wl,
+        max_binding_array_elements_per_shader_stage: max_binding_array_elements_per_shader_stage_wl,
+        max_binding_array_sampler_elements_per_shader_stage:
+            max_binding_array_sampler_elements_per_shader_stage_wl,
     } = limits;
     let Limits {
         max_texture_dimension_1d: max_texture_dimension_1d_al,
@@ -843,6 +843,9 @@ fn min_limits(adapter: &wgpu::Adapter, limits: Limits) -> Limits {
         max_subgroup_size: max_subgroup_size_al,
         max_push_constant_size: max_push_constant_size_al,
         max_non_sampler_bindings: max_non_sampler_bindings_al,
+        max_binding_array_elements_per_shader_stage: max_binding_array_elements_per_shader_stage_al,
+        max_binding_array_sampler_elements_per_shader_stage:
+            max_binding_array_sampler_elements_per_shader_stage_al,
     } = adapter.limits();
 
     Limits {
@@ -1060,5 +1063,21 @@ fn min_limits(adapter: &wgpu::Adapter, limits: Limits) -> Limits {
         } else {
             max_non_sampler_bindings_al
         },
+        max_binding_array_elements_per_shader_stage:
+            if max_binding_array_elements_per_shader_stage_wl
+                <= max_binding_array_elements_per_shader_stage_al
+            {
+                max_binding_array_elements_per_shader_stage_wl
+            } else {
+                max_binding_array_elements_per_shader_stage_al
+            },
+        max_binding_array_sampler_elements_per_shader_stage:
+            if max_binding_array_sampler_elements_per_shader_stage_wl
+                <= max_binding_array_sampler_elements_per_shader_stage_al
+            {
+                max_binding_array_sampler_elements_per_shader_stage_wl
+            } else {
+                max_binding_array_sampler_elements_per_shader_stage_al
+            },
     }
 }

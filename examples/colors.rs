@@ -1,7 +1,10 @@
 use std::{
     num::NonZeroU32,
     sync::Arc,
-    time::Instant,
+    time::{
+        Duration,
+        Instant,
+    },
 };
 
 use palette::{
@@ -29,12 +32,13 @@ use winit::{
     },
 };
 
-use crate::style::Styled;
-
 pub struct App {
     window: Option<Arc<Window>>,
     backend: Option<Terminal<WgpuBackend<'static, 'static>>>,
     timer: Instant,
+    last_frame: Instant,
+    durations: [Option<Duration>; 100],
+    frame_count: u64,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -46,6 +50,9 @@ fn main() -> anyhow::Result<()> {
         window: None,
         backend: None,
         timer: Instant::now(),
+        last_frame: Instant::now(),
+        durations: [None; 100],
+        frame_count: 0,
     };
     event_loop.run_app(&mut app).unwrap();
 
@@ -107,30 +114,40 @@ impl ApplicationHandler for App {
 
         let Size { width, height } = terminal.backend().size().unwrap();
         let offset = (self.timer.elapsed().as_millis() / 33) as usize;
+        let duration = self.last_frame.elapsed();
+        self.last_frame = Instant::now();
+        self.durations[self.frame_count as usize % self.durations.len()] = Some(duration);
+        self.frame_count += 1;
+
         terminal
             .draw(|f| {
-                let mut lines = vec![];
-                for y in 0..height {
-                    lines.push(Line::from(
-                        std::iter::repeat("█")
-                            .enumerate()
-                            .map(|(idx, ch)| {
-                                let hsv = Okhsv::new(
-                                    ((offset + idx) % 360) as f32,
-                                    Okhsv::max_saturation(),
-                                    (y + 1) as f32 / (height + 1) as f32,
-                                );
-                                let rgb = Srgb::from_color_unclamped(hsv);
-                                let rgb = rgb.into_format();
-                                ch.set_style(
-                                    Style::new().fg(Color::Rgb(rgb.red, rgb.green, rgb.blue)),
-                                )
-                            })
-                            .take(width as usize)
-                            .collect::<Vec<_>>(),
-                    ));
+                for (idx, cell) in f.buffer_mut().content.iter_mut().enumerate() {
+                    let y = idx / width as usize;
+                    let x = idx % width as usize;
+
+                    let hsv = Okhsv::new(
+                        ((offset + x) % 360) as f32,
+                        Okhsv::max_saturation(),
+                        (y + 1) as f32 / (height + 1) as f32,
+                    );
+                    let rgb = Srgb::from_color_unclamped(hsv);
+                    let rgb = rgb.into_format();
+                    cell.set_char('█');
+                    cell.set_fg(Color::Rgb(rgb.red, rgb.green, rgb.blue));
                 }
-                f.render_widget(Paragraph::new(lines).block(Block::bordered()), f.area());
+
+                let duration = self.durations.iter().flatten().sum::<Duration>();
+                let count = self.durations.iter().filter(|d| d.is_some()).count() as u128;
+
+                f.render_widget(
+                    Block::bordered().title(format!(
+                        "{}x{} -- {:04?}fps",
+                        width,
+                        height,
+                        1_000_000 / duration.as_micros().div_ceil(count)
+                    )),
+                    f.area(),
+                );
             })
             .unwrap();
 
