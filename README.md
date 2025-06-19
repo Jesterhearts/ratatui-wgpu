@@ -10,7 +10,7 @@ A wgpu based rendering backend for ratatui.
 
 This started out as a custom rendering backend for a game I'm developing, and I thought I'd make it
 available to the broader community as an alternative rendering target for TUI applications. One of
-its primary goals is to support serving TUI applications on the web.
+its primary goals is to support serving TUI applications on the web & desktop.
 
 ## Alternatives
 - [egui_ratatui](https://crates.io/crates/egui_ratatui) uses an egui widget as its backend, allowing
@@ -18,6 +18,9 @@ its primary goals is to support serving TUI applications on the web.
   - Advantages: Egui is significantly more mature than this library and brings with it a host of
     widgets and builtin accessibility support.
   - Disadvantages: You can't run custom shader code against its output.
+- [ratzilla](https://crates.io/crates/ratzilla).
+  - Advantages: This is more of an all-in-one solution that also supports e.g keyboard input.
+  - Disadvantages: It only runs on the web afaict, and it does not support custom shader code.
 
 ## Goals
 The crate has the following goals in order of descending priority.
