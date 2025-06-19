@@ -377,10 +377,9 @@ pub struct CrtSettings {
     /// A good range of values is 0.0 to 1.0.
     /// Defaults to 0.2.
     pub mask_strength: f32,
-    /// How much to fade between frames for the CRT effect. A high value will
+    /// How much to fade between frames for the CRT effect. A value of 1.0 will
     /// result in ghosting from previous frames for animations/screen
     /// transitions.
-    /// A good range of values is 0.0 to 1.0.
     /// Defaults to 0.0.
     pub slow_fade: f32,
 }
