@@ -32,5 +32,7 @@ fn fs_main(@builtin(position) gl_Position: vec4<f32>) -> FragmentOutput {
     let uv = gl_Position.xy / target_size;
     let factor = select(2.2, 1.0, uniforms.use_srgb == 0u);
 
-    return FragmentOutput(pow(textureSample(Texture, Sampler, uv), vec4(vec3(factor), 1.0)));
+    let color = pow(textureSample(Texture, Sampler, uv), vec4(vec3(factor), 1.0));
+
+    return FragmentOutput(select(color, vec4(0.0, 0.0, 0.0, 0.0), uv.x > 1.0 || uv.y > 1.0));
 }
