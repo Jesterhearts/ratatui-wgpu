@@ -35,7 +35,6 @@ The crate has the following goals in order of descending priority.
       this backend to render from a worker thread.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping, mixed bidi, and combining sequences).
-   - For color fonts (e.g. emojis) only colr v0 & v1 outlines and raster images are supported.
 4. Reasonable performance.
 
 ## Non-goals
