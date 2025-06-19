@@ -36,6 +36,10 @@ The crate has the following goals in order of descending priority.
     - You will likely want to enable the `web` feature if you intend to support Firefox.
 3. Correct text rendering (including shaping, mixed bidi, and combining sequences).
 4. Reasonable performance.
+   - Realistically, it can easily run at >60fps at 1080p with the default font size. You can run the
+     `colors` example to see how it would perform updating every cell in the terminal on every
+     frame. On my machine, `colors` runs at ~800fps at 1080p even with the applied CRT shader
+     effect.
 
 ## Non-goals
 1. Builtin-accessibility support.
