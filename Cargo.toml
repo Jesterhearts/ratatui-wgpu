@@ -7,12 +7,18 @@ rust-version = "1.75.0"
 repository   = "https://github.com/Jesterhearts/ratatui-wgpu"
 description  = "A wgpu based backend for ratatui."
 keywords     = [ "wasm", "tui", "rendering" ]
+exclude      = [ "examples/", "backend/fonts/", "backend/goldens/" ]
 
 [features]
 default = [ "ahash", "png" ]
 ahash   = [ "dep:ahash" ]
 png     = [ "dep:png" ]
 web     = [ "wgpu/webgl" ]
+
+[[example]]
+name              = "hello_crt"
+path              = "examples/web/hello_crt.rs"
+required-features = [ "web" ]
 
 [[example]]
 name              = "hello_web"

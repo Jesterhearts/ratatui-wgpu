@@ -6,7 +6,7 @@
 
 A wgpu based rendering backend for ratatui.
 
-https://github.com/user-attachments/assets/eb99fd5c-7f07-4a2f-ab11-3e7f6557c6f7
+<img src="splash.gif" alt="splash image" width="600">
 
 This started out as a custom rendering backend for a game I'm developing, and I thought I'd make it
 available to the broader community as an alternative rendering target for TUI applications. One of
@@ -56,6 +56,7 @@ The crate has the following goals in order of descending priority.
 ## Changelog
 ### 2.1 -> 3.0
 - Upgrade wgpu.
+- Add CRT shader.
 
 ### 2.0 -> 2.1
 - Add the ability to render while preserving the aspect ratio of the text. The rendered text may

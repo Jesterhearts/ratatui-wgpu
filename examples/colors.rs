@@ -8,7 +8,7 @@ use std::{
 };
 
 use palette::{
-    convert::FromColorUnclamped,
+    IntoColor,
     Okhsv,
     Srgb,
 };
@@ -17,6 +17,7 @@ use ratatui::{
     widgets::*,
 };
 use ratatui_wgpu::{
+    shaders::CrtPostProcessor,
     Builder,
     Dimensions,
     Font,
@@ -34,7 +35,7 @@ use winit::{
 
 pub struct App {
     window: Option<Arc<Window>>,
-    backend: Option<Terminal<WgpuBackend<'static, 'static>>>,
+    backend: Option<Terminal<WgpuBackend<'static, 'static, CrtPostProcessor>>>,
     timer: Instant,
     last_frame: Instant,
     durations: [Option<Duration>; 100],
@@ -130,7 +131,7 @@ impl ApplicationHandler for App {
                         Okhsv::max_saturation(),
                         (y + 1) as f32 / (height + 1) as f32,
                     );
-                    let rgb = Srgb::from_color_unclamped(hsv);
+                    let rgb: Srgb = hsv.into_color();
                     let rgb = rgb.into_format();
                     cell.set_char('█');
                     cell.set_fg(Color::Rgb(rgb.red, rgb.green, rgb.blue));
