@@ -836,31 +836,6 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                 let [r, g, b] = bg_color;
                 let bg_color_u32: u32 = u32::from_be_bytes([r, g, b, 255]);
 
-                let y = (index as u32 / bounds.width as u32 * self.fonts.height_px()) as f32;
-                let x = (index as u32 % bounds.width as u32 * self.fonts.min_width_px()) as f32;
-                for offset_x in 0..cell.symbol().width() {
-                    let x = x + (offset_x as u32 * self.fonts.min_width_px()) as f32;
-                    self.bg_vertices.push(TextBgVertexMember {
-                        vertex: [x, y],
-                        bg_color: bg_color_u32,
-                    });
-                    self.bg_vertices.push(TextBgVertexMember {
-                        vertex: [x + self.fonts.min_width_px() as f32, y],
-                        bg_color: bg_color_u32,
-                    });
-                    self.bg_vertices.push(TextBgVertexMember {
-                        vertex: [x, y + self.fonts.height_px() as f32],
-                        bg_color: bg_color_u32,
-                    });
-                    self.bg_vertices.push(TextBgVertexMember {
-                        vertex: [
-                            x + self.fonts.min_width_px() as f32,
-                            y + self.fonts.height_px() as f32,
-                        ],
-                        bg_color: bg_color_u32,
-                    });
-                }
-
                 for (
                     (x, y, _),
                     RenderInfo {
@@ -913,10 +888,29 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                         let uvx = cached.x + offset_x;
                         let uvy = cached.y;
 
+                        self.bg_vertices.push(TextBgVertexMember {
+                            vertex: [x, y],
+                            bg_color: bg_color_u32,
+                        });
+                        self.bg_vertices.push(TextBgVertexMember {
+                            vertex: [x + self.fonts.min_width_px() as f32, y],
+                            bg_color: bg_color_u32,
+                        });
+                        self.bg_vertices.push(TextBgVertexMember {
+                            vertex: [x, y + self.fonts.height_px() as f32],
+                            bg_color: bg_color_u32,
+                        });
+                        self.bg_vertices.push(TextBgVertexMember {
+                            vertex: [
+                                x + self.fonts.min_width_px() as f32,
+                                y + self.fonts.height_px() as f32,
+                            ],
+                            bg_color: bg_color_u32,
+                        });
+
                         let underline_pos = ((*underline_pos_min as u32 + uvy) << 16)
                             | (*underline_pos_max as u32 + uvy);
 
-                        // 0
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x, y],
                             uv: [uvx as f32, uvy as f32],
@@ -924,7 +918,6 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             underline_pos,
                             underline_color,
                         });
-                        // 1
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x + self.fonts.min_width_px() as f32, y],
                             uv: [uvx as f32 + self.fonts.min_width_px() as f32, uvy as f32],
@@ -932,7 +925,6 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             underline_pos,
                             underline_color,
                         });
-                        // 2
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x, y + self.fonts.height_px() as f32],
                             uv: [uvx as f32, uvy as f32 + self.fonts.height_px() as f32],
@@ -940,7 +932,6 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             underline_pos,
                             underline_color,
                         });
-                        // 3
                         self.text_vertices.push(TextVertexMember {
                             vertex: [
                                 x + self.fonts.min_width_px() as f32,
