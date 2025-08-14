@@ -34,7 +34,7 @@ required-features = [ "web" ]
 ahash              = { version = "0.8.12", default-features = false, features = [ "std", "compile-time-rng" ], optional = true }
 bitvec             = { version = "1.0.1", default-features = false, features = [ "std" ] }
 bytemuck           = { version = "1.23.2", features = [ "derive" ] }
-evictor            = { version = "0.3.0", default-features = false }
+evictor            = { version = "0.4.0", default-features = false }
 indexmap           = { version = "2.10.0", default-features = false, features = [ "std" ] }
 log                = { version = "0.4.22", default-features = false }
 png                = { version = "0.17.14", optional = true }
