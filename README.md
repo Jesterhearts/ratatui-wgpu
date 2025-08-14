@@ -1,6 +1,6 @@
 # ratatui-wgpu
 [![Crate Badge]](https://crates.io/crates/ratatui-wgpu)
-![Deps.rs Badge](https://deps.rs/repo/github/jesterhearts/ratatui-wgpu)
+[![Deps.rs Badge]](https://deps.rs/repo/github/jesterhearts/ratatui-wgpu)
 [![Docs Badge]](https://docs.rs/ratatui-wgpu/latest/ratatui_wgpu/)
 ![License Badge]
 
