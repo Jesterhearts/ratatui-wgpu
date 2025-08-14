@@ -74,10 +74,9 @@ definitely not minimal.
    nicely encapsulates work that would otherwise be unsafe.
 5. evictor: This is used to implement an LRU cache for text shaping plans. The code for evictor used
    to be part of this crate, but was moved to its own crate for reuse in other projects.
-6. indexmap: Used internally to implement an lru heap which has O(1) lookup for entries and to order
-   glyphs in target cells for rendering. This could be replaced with a `HashMap<Key, usize>` +
-   `Vec<Value>`, but doing so would require a lot of tedious & error prone book keeping when
-   bubbling entries down the heap.
+6. indexmap: Used internally to order glyphs in target cells for rendering. This could be replaced
+   with a `HashMap<Key, usize>` + `Vec<Value>`, but doing so would require a lot of tedious & error
+   prone book keeping.
 7. log: Integrating with standard logging infrastructure is very useful. This might be replaced with
    tracing, but I'm not going to go without some sort of logging.
 8. png (optional, default): Some fonts embed png images as raster graphics for characters. The png
