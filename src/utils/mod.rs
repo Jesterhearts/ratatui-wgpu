@@ -18,7 +18,6 @@ use rustybuzz::{
     Face,
 };
 
-pub(crate) mod lru;
 pub(crate) mod plan_cache;
 pub(crate) mod text_atlas;
 

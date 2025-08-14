@@ -72,31 +72,33 @@ definitely not minimal.
    dirty.
 4. bytemuck: Working directly with byte slices is needed to interface with the shader code, and this
    nicely encapsulates work that would otherwise be unsafe.
-5. indexmap: Used internally to implement an lru heap which has O(1) lookup for entries and to order
+5. evictor: This is used to implement an LRU cache for text shaping plans. The code for evictor used
+   to be part of this crate, but was moved to its own crate for reuse in other projects.
+6. indexmap: Used internally to implement an lru heap which has O(1) lookup for entries and to order
    glyphs in target cells for rendering. This could be replaced with a `HashMap<Key, usize>` +
    `Vec<Value>`, but doing so would require a lot of tedious & error prone book keeping when
    bubbling entries down the heap.
-6. log: Integrating with standard logging infrastructure is very useful. This might be replaced with
+7. log: Integrating with standard logging infrastructure is very useful. This might be replaced with
    tracing, but I'm not going to go without some sort of logging.
-7. png (optional, default): Some fonts embed png images as raster graphics for characters. The png
+8. png (optional, default): Some fonts embed png images as raster graphics for characters. The png
    crate is used to decode these images if they are present.
-8. raqote: I don't want to implement path stroking & filling by hand and this library supports all
+9. raqote: I don't want to implement path stroking & filling by hand and this library supports all
    the gradient modes required to render from a font's COLR table.
-9. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
+10. rustybuzz: Text shaping is _hard_ and way out of scope for this library. There will always be an
    external dependency on some other library to do this for me. Rustybuzz happens to be (imo) the
    current best choice.
-10. thiserror: I don't want to write the Error trait by hand. I might consider removing this if
+11. thiserror: I don't want to write the Error trait by hand. I might consider removing this if
     doing so doesn't turn out to be so bad.
-11. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
+12. unicode-bidi: I don't want to implement the unicode bidi algorithm by hand, and even if I did,
     most of the code would be based on a implementation like this anyways. This performs well enough
     even though cells have to be concatenated into a single string for processing. There are smarter
     ways to to this processing I'm sure, but I'll optimize when I need to.
-12. unicode-properties: I need to check if a character is an emoji in order to know how to handle
+13. unicode-properties: I need to check if a character is an emoji in order to know how to handle
     foreground colors and bold/italic styles.
-13. unicode-width: I need to access the width of characters to figure out row layout and
+14. unicode-width: I need to access the width of characters to figure out row layout and
     implementing this myself seems silly. This is already pulled in by ratatui, so it doesn't really
     increase the size of the dependency tree.
-14. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
+15. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
 
 [Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=flat-square
 [Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=flat-square

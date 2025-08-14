@@ -1,11 +1,12 @@
-use std::ops::Deref;
+use std::{
+    num::NonZeroUsize,
+    ops::Deref,
+};
 
+use evictor::Lru;
 use ratatui::style::Modifier;
 
-use crate::{
-    utils::lru::Lru,
-    Fonts,
-};
+use crate::Fonts;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct Key {
@@ -60,11 +61,13 @@ impl Atlas {
     pub(crate) fn new(fonts: &Fonts, width: u32, height: u32) -> Self {
         let entry_width = fonts.min_width_px() * 2;
         let entry_height = fonts.height_px();
-        let max_entries = (width / entry_width) * (height / entry_height);
+        let max_entries = ((width / entry_width) * (height / entry_height)).max(1);
         debug!("Atlas with WxH {entry_width}x{entry_height} can hold {max_entries}");
 
         Atlas {
-            lru: Lru::default(),
+            lru: Lru::new(
+                NonZeroUsize::new(max_entries as usize).expect("Max entries must be non-zero"),
+            ),
             width,
             height,
             entry_width,

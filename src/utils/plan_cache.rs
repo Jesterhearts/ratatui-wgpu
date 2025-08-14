@@ -1,3 +1,6 @@
+use std::num::NonZeroUsize;
+
+use evictor::Lru;
 use rustybuzz::{
     Direction,
     Script,
@@ -5,10 +8,7 @@ use rustybuzz::{
     UnicodeBuffer,
 };
 
-use crate::{
-    utils::lru::Lru,
-    Font,
-};
+use crate::Font;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Key {
@@ -19,14 +19,12 @@ struct Key {
 
 pub(crate) struct PlanCache {
     lru: Lru<Key, ShapePlan>,
-    capacity: usize,
 }
 
 impl PlanCache {
     pub(crate) fn new(capacity: usize) -> Self {
         Self {
-            lru: Lru::default(),
-            capacity: capacity + 1,
+            lru: Lru::new(NonZeroUsize::new(capacity).expect("Capacity must be non-zero")),
         }
     }
 
@@ -38,11 +36,7 @@ impl PlanCache {
             script: buffer.script(),
         };
 
-        if self.lru.len() == self.capacity {
-            self.lru.pop();
-        }
-
-        self.lru.get_or_insert_with(key, || {
+        self.lru.get_or_insert_with(key, |_| {
             ShapePlan::new(
                 font.font(),
                 buffer.direction(),
