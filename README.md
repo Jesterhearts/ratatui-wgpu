@@ -1,6 +1,6 @@
 # ratatui-wgpu
 [![Crate Badge]](https://crates.io/crates/ratatui-wgpu)
-![Deps.rs Badge]
+![Deps.rs Badge](https://deps.rs/repo/github/jesterhearts/ratatui-wgpu)
 [![Docs Badge]](https://docs.rs/ratatui-wgpu/latest/ratatui_wgpu/)
 ![License Badge]
 
@@ -58,45 +58,6 @@ The crate has the following goals in order of descending priority.
 
    To put that in perspective, rendering every printable ascii character in every combination of
    styles would take (95 * 4) 380 cache entries or ~10% of the cache.
-
-## Changelog
-### 2.1 -> 3.0
-- Upgrade wgpu.
-- Add CRT shader.
-
-### 2.0 -> 2.1
-- Add the ability to render while preserving the aspect ratio of the text. The rendered text may
-  have a black border as a result.
-
-### 1.4 -> 2.0
-- Upgrade ratatui and wgpu.
-- Remove deprecated apis.
-
-### 1.3 -> 1.4
-- Support colr v1.
-  - Drop skrifa.
-- Deprecate `with_dimensions` and replace with `with_width_and_height`.
-  - The order of arguments (height, width) to `with_dimensions` was confusing. The new function
-    takes in a struct which explicitly specifies width & height.
-
-### 1.2 -> 1.3
-- Support colr v0 and png/bitmap images in fonts, allowing emoji rendering.
-  - Switched tiny_skia -> raqote.
-  - Added skrifa.
-  - Added unicode-properties.
-  - Added png.
-- Fix an issue with incorrect handling of srgb conversion in the default shader.
-
-### 1.1 -> 1.2
-- Added support for rtl and mixed bidi.
-  - Switched swash -> rustybuzz.
-- Added support for combining characters.
-- Added webworker example.
-- Added colors example.
-- Added dependency on ahash.
-- Dropped dependency on coolors.
-- Dropped dependency on palette.
-- Dropped dependency on guillotiere.
 
 ## Dependencies
 This crate attempts to be reasonable with its usage of external dependencies, although it is

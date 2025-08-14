@@ -297,6 +297,7 @@ impl PostProcessor for Pipeline {
                     load: LoadOp::Clear(Color::TRANSPARENT),
                     store: StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             ..Default::default()
         });

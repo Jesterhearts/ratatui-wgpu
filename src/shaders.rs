@@ -252,6 +252,7 @@ impl<const PRESERVE_ASPECT: bool> PostProcessor for DefaultPostProcessor<PRESERV
                     load: LoadOp::Clear(Color::TRANSPARENT),
                     store: StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             ..Default::default()
         });
@@ -780,6 +781,7 @@ impl PostProcessor for CrtPostProcessor {
                         load: LoadOp::Clear(Color::TRANSPARENT),
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 ..Default::default()
             });
@@ -808,6 +810,7 @@ impl PostProcessor for CrtPostProcessor {
                         load: LoadOp::Clear(Color::TRANSPARENT),
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 ..Default::default()
             });
@@ -860,6 +863,7 @@ impl PostProcessor for CrtPostProcessor {
                             load: LoadOp::Clear(Color::TRANSPARENT),
                             store: StoreOp::Store,
                         },
+                        depth_slice: None,
                     }),
                     Some(RenderPassColorAttachment {
                         view: &self.accumulate_view_out,
@@ -868,6 +872,7 @@ impl PostProcessor for CrtPostProcessor {
                             load: LoadOp::Load,
                             store: StoreOp::Store,
                         },
+                        depth_slice: None,
                     }),
                 ],
                 ..Default::default()

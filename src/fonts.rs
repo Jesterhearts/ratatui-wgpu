@@ -43,7 +43,7 @@ impl Font<'_> {
         self.id
     }
 
-    pub(crate) fn font(&self) -> &Face {
+    pub(crate) fn font(&'_ self) -> &'_ Face<'_> {
         &self.font
     }
 
@@ -209,7 +209,7 @@ impl<'a> Fonts<'a> {
         1 + self.bold.len() + self.italic.len() + self.bold_italic.len() + self.regular.len()
     }
 
-    pub(crate) fn font_for_cell(&self, cell: &Cell) -> (&Font, bool, bool) {
+    pub(crate) fn font_for_cell(&'_ self, cell: &Cell) -> (&'_ Font<'_>, bool, bool) {
         if cell.modifier.contains(Modifier::BOLD | Modifier::ITALIC) {
             self.select_font(
                 cell.symbol(),

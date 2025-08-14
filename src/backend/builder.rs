@@ -805,6 +805,11 @@ fn min_limits(adapter: &wgpu::Adapter, limits: Limits) -> Limits {
         max_binding_array_elements_per_shader_stage: max_binding_array_elements_per_shader_stage_wl,
         max_binding_array_sampler_elements_per_shader_stage:
             max_binding_array_sampler_elements_per_shader_stage_wl,
+        max_blas_primitive_count: max_blas_primitive_count_wl,
+        max_blas_geometry_count: max_blas_geometry_count_wl,
+        max_tlas_instance_count: max_tlas_instance_count_wl,
+        max_acceleration_structures_per_shader_stage:
+            max_acceleration_structures_per_shader_stage_wl,
     } = limits;
     let Limits {
         max_texture_dimension_1d: max_texture_dimension_1d_al,
@@ -846,6 +851,11 @@ fn min_limits(adapter: &wgpu::Adapter, limits: Limits) -> Limits {
         max_binding_array_elements_per_shader_stage: max_binding_array_elements_per_shader_stage_al,
         max_binding_array_sampler_elements_per_shader_stage:
             max_binding_array_sampler_elements_per_shader_stage_al,
+        max_blas_primitive_count: max_blas_primitive_count_al,
+        max_blas_geometry_count: max_blas_geometry_count_al,
+        max_tlas_instance_count: max_tlas_instance_count_al,
+        max_acceleration_structures_per_shader_stage:
+            max_acceleration_structures_per_shader_stage_al,
     } = adapter.limits();
 
     Limits {
@@ -1078,6 +1088,29 @@ fn min_limits(adapter: &wgpu::Adapter, limits: Limits) -> Limits {
                 max_binding_array_sampler_elements_per_shader_stage_wl
             } else {
                 max_binding_array_sampler_elements_per_shader_stage_al
+            },
+        max_blas_primitive_count: if max_blas_primitive_count_wl <= max_blas_primitive_count_al {
+            max_blas_primitive_count_wl
+        } else {
+            max_blas_primitive_count_al
+        },
+        max_blas_geometry_count: if max_blas_geometry_count_wl <= max_blas_geometry_count_al {
+            max_blas_geometry_count_wl
+        } else {
+            max_blas_geometry_count_al
+        },
+        max_tlas_instance_count: if max_tlas_instance_count_wl <= max_tlas_instance_count_al {
+            max_tlas_instance_count_wl
+        } else {
+            max_tlas_instance_count_al
+        },
+        max_acceleration_structures_per_shader_stage:
+            if max_acceleration_structures_per_shader_stage_wl
+                <= max_acceleration_structures_per_shader_stage_al
+            {
+                max_acceleration_structures_per_shader_stage_wl
+            } else {
+                max_acceleration_structures_per_shader_stage_al
             },
     }
 }
