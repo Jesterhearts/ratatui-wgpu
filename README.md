@@ -99,7 +99,7 @@ definitely not minimal.
     increase the size of the dependency tree.
 15. web-time: Used for crossplatform (web & native) time support in order to handle text blinking.
 
-[Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=flat-square
-[Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=flat-square
-[Docs Badge]: https://img.shields.io/docsrs/ratatui-wgpu?logo=rust&style=flat-square
-[License Badge]: https://img.shields.io/crates/l/ratatui-wgpu?style=flat-square
+[Crate Badge]: https://img.shields.io/crates/v/ratatui-wgpu?logo=rust&style=for-the-badge
+[Deps.rs Badge]: https://deps.rs/repo/github/jesterhearts/ratatui-wgpu/status.svg?style=for-the-badge
+[Docs Badge]: https://img.shields.io/docsrs/ratatui-wgpu?logo=rust&style=for-the-badge
+[License Badge]: https://img.shields.io/crates/l/ratatui-wgpu?style=for-the-badge
