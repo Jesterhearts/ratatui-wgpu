@@ -1117,7 +1117,10 @@ fn extract_color_image(
             {
                 let decoder = png::Decoder::new(std::io::Cursor::new(raster.data));
                 if let Ok(mut info) = decoder.read_info() {
-                    image.resize(info.output_buffer_size() / size_of::<u32>(), 0);
+                    image.resize(
+                        info.output_buffer_size().unwrap_or_default() / size_of::<u32>(),
+                        0,
+                    );
                     if info.next_frame(bytemuck::cast_slice_mut(image)).is_err() {
                         return None;
                     }
