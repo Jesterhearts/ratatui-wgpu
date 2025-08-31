@@ -1,12 +1,10 @@
 use std::num::NonZeroUsize;
 
 use evictor::Lru;
-use rustybuzz::{
-    Direction,
-    Script,
-    ShapePlan,
-    UnicodeBuffer,
-};
+use rustybuzz::Direction;
+use rustybuzz::Script;
+use rustybuzz::ShapePlan;
+use rustybuzz::UnicodeBuffer;
 
 use crate::Font;
 

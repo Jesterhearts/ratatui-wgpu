@@ -4,37 +4,34 @@ pub(crate) mod wgpu_backend;
 use std::num::NonZeroU32;
 
 use ratatui::style::Color;
-use wgpu::{
-    Adapter,
-    BindGroup,
-    CommandEncoder,
-    Device,
-    Extent3d,
-    Queue,
-    RenderPipeline,
-    Surface,
-    SurfaceConfiguration,
-    SurfaceTexture,
-    TextureDescriptor,
-    TextureDimension,
-    TextureFormat,
-    TextureUsages,
-    TextureView,
-    TextureViewDescriptor,
-};
+use wgpu::Adapter;
+use wgpu::BindGroup;
 #[cfg(test)]
-use wgpu::{
-    Buffer,
-    BufferDescriptor,
-    BufferUsages,
-    Texture,
-};
+use wgpu::Buffer;
+#[cfg(test)]
+use wgpu::BufferDescriptor;
+#[cfg(test)]
+use wgpu::BufferUsages;
+use wgpu::CommandEncoder;
+use wgpu::Device;
+use wgpu::Extent3d;
+use wgpu::Queue;
+use wgpu::RenderPipeline;
+use wgpu::Surface;
+use wgpu::SurfaceConfiguration;
+use wgpu::SurfaceTexture;
+#[cfg(test)]
+use wgpu::Texture;
+use wgpu::TextureDescriptor;
+use wgpu::TextureDimension;
+use wgpu::TextureFormat;
+use wgpu::TextureUsages;
+use wgpu::TextureView;
+use wgpu::TextureViewDescriptor;
 
-use crate::colors::{
-    named::*,
-    Rgb,
-    ANSI_TO_RGB,
-};
+use crate::colors::named::*;
+use crate::colors::Rgb;
+use crate::colors::ANSI_TO_RGB;
 
 /// A pipeline for post-processing rendered text.
 pub trait PostProcessor {
@@ -119,12 +116,11 @@ pub enum Viewport {
 mod private {
     use wgpu::Surface;
 
-    use crate::backend::RenderTarget;
     #[cfg(test)]
-    use crate::backend::{
-        HeadlessSurface,
-        HeadlessTarget,
-    };
+    use crate::backend::HeadlessSurface;
+    #[cfg(test)]
+    use crate::backend::HeadlessTarget;
+    use crate::backend::RenderTarget;
 
     pub trait Sealed {}
 

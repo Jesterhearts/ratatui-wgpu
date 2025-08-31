@@ -1,22 +1,18 @@
-use raqote::{
-    Color,
-    DrawOptions,
-    DrawTarget,
-    Gradient,
-    GradientStop,
-    IntRect,
-    Path,
-    PathBuilder,
-    Point,
-    SolidSource,
-    Source,
-    Transform,
-    Vector,
-};
-use rustybuzz::{
-    ttf_parser::colr::CompositeMode,
-    Face,
-};
+use raqote::Color;
+use raqote::DrawOptions;
+use raqote::DrawTarget;
+use raqote::Gradient;
+use raqote::GradientStop;
+use raqote::IntRect;
+use raqote::Path;
+use raqote::PathBuilder;
+use raqote::Point;
+use raqote::SolidSource;
+use raqote::Source;
+use raqote::Transform;
+use raqote::Vector;
+use rustybuzz::ttf_parser::colr::CompositeMode;
+use rustybuzz::Face;
 
 pub(crate) mod plan_cache;
 pub(crate) mod text_atlas;

@@ -1,7 +1,5 @@
-use std::{
-    num::NonZeroUsize,
-    ops::Deref,
-};
+use std::num::NonZeroUsize;
+use std::ops::Deref;
 
 use evictor::Lru;
 use ratatui::style::Modifier;
@@ -139,14 +137,10 @@ impl Atlas {
 mod tests {
     use ratatui::style::Modifier;
 
-    use crate::{
-        utils::text_atlas::{
-            Atlas,
-            Key,
-        },
-        Font,
-        Fonts,
-    };
+    use crate::utils::text_atlas::Atlas;
+    use crate::utils::text_atlas::Key;
+    use crate::Font;
+    use crate::Fonts;
 
     #[test]
     fn reuse() {

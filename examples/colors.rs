@@ -1,37 +1,23 @@
-use std::{
-    num::NonZeroU32,
-    sync::Arc,
-    time::{
-        Duration,
-        Instant,
-    },
-};
+use std::num::NonZeroU32;
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
-use palette::{
-    IntoColor,
-    Okhsv,
-    Srgb,
-};
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
-use ratatui_wgpu::{
-    shaders::CrtPostProcessor,
-    Builder,
-    Dimensions,
-    Font,
-    WgpuBackend,
-};
-use winit::{
-    application::ApplicationHandler,
-    event::WindowEvent,
-    event_loop::EventLoop,
-    window::{
-        Window,
-        WindowAttributes,
-    },
-};
+use palette::IntoColor;
+use palette::Okhsv;
+use palette::Srgb;
+use ratatui::prelude::*;
+use ratatui::widgets::*;
+use ratatui_wgpu::shaders::CrtPostProcessor;
+use ratatui_wgpu::Builder;
+use ratatui_wgpu::Dimensions;
+use ratatui_wgpu::Font;
+use ratatui_wgpu::WgpuBackend;
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::EventLoop;
+use winit::window::Window;
+use winit::window::WindowAttributes;
 
 pub struct App {
     window: Option<Arc<Window>>,

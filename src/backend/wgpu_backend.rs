@@ -1,125 +1,85 @@
-use std::{
-    collections::{
-        HashMap,
-        HashSet,
-    },
-    marker::PhantomData,
-    mem::size_of,
-    num::NonZeroU64,
-};
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::marker::PhantomData;
+use std::mem::size_of;
+use std::num::NonZeroU64;
 
-use bitvec::{
-    order::Lsb0,
-    slice::BitSlice,
-    vec::BitVec,
-};
+use bitvec::order::Lsb0;
+use bitvec::slice::BitSlice;
+use bitvec::vec::BitVec;
 use indexmap::IndexMap;
-use raqote::{
-    DrawOptions,
-    DrawTarget,
-    SolidSource,
-    StrokeStyle,
-    Transform,
-};
-use ratatui::{
-    backend::{
-        Backend,
-        ClearType,
-        WindowSize,
-    },
-    buffer::Cell,
-    layout::{
-        Position,
-        Size,
-    },
-    style::Modifier,
-};
-use rustybuzz::{
-    shape_with_plan,
-    ttf_parser::{
-        GlyphId,
-        RasterGlyphImage,
-        RasterImageFormat,
-        RgbaColor,
-    },
-    GlyphBuffer,
-    UnicodeBuffer,
-};
-use unicode_bidi::{
-    Level,
-    ParagraphBidiInfo,
-};
-use unicode_properties::{
-    GeneralCategoryGroup,
-    UnicodeEmoji,
-    UnicodeGeneralCategory,
-};
-use unicode_width::{
-    UnicodeWidthChar,
-    UnicodeWidthStr,
-};
-use web_time::{
-    Duration,
-    Instant,
-};
-use wgpu::{
-    util::{
-        BufferInitDescriptor,
-        DeviceExt,
-    },
-    Buffer,
-    BufferUsages,
-    CommandEncoderDescriptor,
-    Device,
-    Extent3d,
-    IndexFormat,
-    LoadOp,
-    Operations,
-    Origin3d,
-    Queue,
-    RenderPassColorAttachment,
-    RenderPassDescriptor,
-    StoreOp,
-    Surface,
-    SurfaceConfiguration,
-    Texture,
-    TextureAspect,
-};
+use raqote::DrawOptions;
+use raqote::DrawTarget;
+use raqote::SolidSource;
+use raqote::StrokeStyle;
+use raqote::Transform;
+use ratatui::backend::Backend;
+use ratatui::backend::ClearType;
+use ratatui::backend::WindowSize;
+use ratatui::buffer::Cell;
+use ratatui::layout::Position;
+use ratatui::layout::Size;
+use ratatui::style::Modifier;
+use rustybuzz::shape_with_plan;
+use rustybuzz::ttf_parser::GlyphId;
+use rustybuzz::ttf_parser::RasterGlyphImage;
+use rustybuzz::ttf_parser::RasterImageFormat;
+use rustybuzz::ttf_parser::RgbaColor;
+use rustybuzz::GlyphBuffer;
+use rustybuzz::UnicodeBuffer;
+use unicode_bidi::Level;
+use unicode_bidi::ParagraphBidiInfo;
+use unicode_properties::GeneralCategoryGroup;
+use unicode_properties::UnicodeEmoji;
+use unicode_properties::UnicodeGeneralCategory;
+use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
+use web_time::Duration;
+use web_time::Instant;
+use wgpu::util::BufferInitDescriptor;
+use wgpu::util::DeviceExt;
+use wgpu::Buffer;
+use wgpu::BufferUsages;
+use wgpu::CommandEncoderDescriptor;
+use wgpu::Device;
+use wgpu::Extent3d;
+use wgpu::IndexFormat;
+use wgpu::LoadOp;
+use wgpu::Operations;
+use wgpu::Origin3d;
+use wgpu::Queue;
+use wgpu::RenderPassColorAttachment;
+use wgpu::RenderPassDescriptor;
+use wgpu::StoreOp;
+use wgpu::Surface;
+use wgpu::SurfaceConfiguration;
+use wgpu::Texture;
+use wgpu::TextureAspect;
 
-use crate::{
-    backend::{
-        build_wgpu_state,
-        c2c,
-        private::Token,
-        PostProcessor,
-        RenderSurface,
-        RenderTexture,
-        TextBgVertexMember,
-        TextCacheBgPipeline,
-        TextCacheFgPipeline,
-        TextVertexMember,
-        Viewport,
-        WgpuState,
-    },
-    colors::Rgb,
-    fonts::{
-        Font,
-        Fonts,
-    },
-    shaders::DefaultPostProcessor,
-    utils::{
-        plan_cache::PlanCache,
-        text_atlas::{
-            Atlas,
-            CacheRect,
-            Entry,
-            Key,
-        },
-        Outline,
-        Painter,
-    },
-    RandomState,
-};
+use crate::backend::build_wgpu_state;
+use crate::backend::c2c;
+use crate::backend::private::Token;
+use crate::backend::PostProcessor;
+use crate::backend::RenderSurface;
+use crate::backend::RenderTexture;
+use crate::backend::TextBgVertexMember;
+use crate::backend::TextCacheBgPipeline;
+use crate::backend::TextCacheFgPipeline;
+use crate::backend::TextVertexMember;
+use crate::backend::Viewport;
+use crate::backend::WgpuState;
+use crate::colors::Rgb;
+use crate::fonts::Font;
+use crate::fonts::Fonts;
+use crate::shaders::DefaultPostProcessor;
+use crate::utils::plan_cache::PlanCache;
+use crate::utils::text_atlas::Atlas;
+use crate::utils::text_atlas::CacheRect;
+use crate::utils::text_atlas::Entry;
+use crate::utils::text_atlas::Key;
+use crate::utils::Outline;
+use crate::utils::Painter;
+use crate::RandomState;
 
 const NULL_CELL: Cell = Cell::new("");
 
@@ -1344,56 +1304,36 @@ const LUT_4: [u8; 16] = [
 mod tests {
     use std::num::NonZeroU32;
 
-    use image::{
-        load_from_memory,
-        GenericImageView,
-        ImageBuffer,
-        Rgba,
-    };
-    use ratatui::{
-        style::{
-            Color,
-            Stylize,
-        },
-        text::Line,
-        widgets::{
-            Block,
-            Paragraph,
-        },
-        Terminal,
-    };
-    use rustybuzz::ttf_parser::{
-        RasterGlyphImage,
-        RasterImageFormat,
-    };
+    use image::load_from_memory;
+    use image::GenericImageView;
+    use image::ImageBuffer;
+    use image::Rgba;
+    use ratatui::style::Color;
+    use ratatui::style::Stylize;
+    use ratatui::text::Line;
+    use ratatui::widgets::Block;
+    use ratatui::widgets::Paragraph;
+    use ratatui::Terminal;
+    use rustybuzz::ttf_parser::RasterGlyphImage;
+    use rustybuzz::ttf_parser::RasterImageFormat;
     use serial_test::serial;
-    use wgpu::{
-        wgt::PollType,
-        CommandEncoderDescriptor,
-        Device,
-        Extent3d,
-        Queue,
-        TextureFormat,
-    };
+    use wgpu::wgt::PollType;
+    use wgpu::CommandEncoderDescriptor;
+    use wgpu::Device;
+    use wgpu::Extent3d;
+    use wgpu::Queue;
+    use wgpu::TextureFormat;
 
-    use crate::{
-        backend::{
-            wgpu_backend::{
-                extract_bw_image,
-                LUT_2,
-                LUT_4,
-            },
-            HeadlessSurface,
-        },
-        shaders::DefaultPostProcessor,
-        utils::text_atlas::{
-            CacheRect,
-            Entry,
-        },
-        Builder,
-        Dimensions,
-        Font,
-    };
+    use crate::backend::wgpu_backend::extract_bw_image;
+    use crate::backend::wgpu_backend::LUT_2;
+    use crate::backend::wgpu_backend::LUT_4;
+    use crate::backend::HeadlessSurface;
+    use crate::shaders::DefaultPostProcessor;
+    use crate::utils::text_atlas::CacheRect;
+    use crate::utils::text_atlas::Entry;
+    use crate::Builder;
+    use crate::Dimensions;
+    use crate::Font;
 
     fn tex2buffer(device: &Device, queue: &Queue, surface: &HeadlessSurface) {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());

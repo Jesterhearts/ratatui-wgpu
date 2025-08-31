@@ -159,16 +159,12 @@ type RandomState = ahash::RandomState;
 #[cfg(not(feature = "ahash"))]
 type RandomState = std::hash::RandomState;
 
-pub use backend::{
-    builder::Builder,
-    wgpu_backend::WgpuBackend,
-    Dimensions,
-    PostProcessor,
-    RenderSurface,
-    RenderTexture,
-    Viewport,
-};
-pub use fonts::{
-    Font,
-    Fonts,
-};
+pub use backend::builder::Builder;
+pub use backend::wgpu_backend::WgpuBackend;
+pub use backend::Dimensions;
+pub use backend::PostProcessor;
+pub use backend::RenderSurface;
+pub use backend::RenderTexture;
+pub use backend::Viewport;
+pub use fonts::Font;
+pub use fonts::Fonts;

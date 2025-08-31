@@ -1,30 +1,20 @@
-use std::{
-    num::NonZeroU32,
-    sync::Arc,
-};
+use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use chrono::Local;
 use fontdb::Database;
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
-use ratatui_wgpu::{
-    shaders::AspectPreservingDefaultPostProcessor,
-    Builder,
-    Dimensions,
-    Font,
-    WgpuBackend,
-};
-use winit::{
-    application::ApplicationHandler,
-    event::WindowEvent,
-    event_loop::EventLoop,
-    window::{
-        Window,
-        WindowAttributes,
-    },
-};
+use ratatui::prelude::*;
+use ratatui::widgets::*;
+use ratatui_wgpu::shaders::AspectPreservingDefaultPostProcessor;
+use ratatui_wgpu::Builder;
+use ratatui_wgpu::Dimensions;
+use ratatui_wgpu::Font;
+use ratatui_wgpu::WgpuBackend;
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::EventLoop;
+use winit::window::Window;
+use winit::window::WindowAttributes;
 
 pub struct App<'d> {
     window: Option<Arc<Window>>,

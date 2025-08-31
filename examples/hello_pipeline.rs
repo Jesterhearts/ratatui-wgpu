@@ -1,36 +1,22 @@
-use std::{
-    num::{
-        NonZeroU32,
-        NonZeroU64,
-    },
-    sync::Arc,
-};
+use std::num::NonZeroU32;
+use std::num::NonZeroU64;
+use std::sync::Arc;
 
-use ratatui::{
-    widgets::{
-        Block,
-        Paragraph,
-        Wrap,
-    },
-    Terminal,
-};
-use ratatui_wgpu::{
-    Builder,
-    Dimensions,
-    Font,
-    PostProcessor,
-    WgpuBackend,
-};
+use ratatui::widgets::Block;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Wrap;
+use ratatui::Terminal;
+use ratatui_wgpu::Builder;
+use ratatui_wgpu::Dimensions;
+use ratatui_wgpu::Font;
+use ratatui_wgpu::PostProcessor;
+use ratatui_wgpu::WgpuBackend;
 use wgpu::*;
-use winit::{
-    application::ApplicationHandler,
-    event::WindowEvent,
-    event_loop::EventLoop,
-    window::{
-        Window,
-        WindowAttributes,
-    },
-};
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::EventLoop;
+use winit::window::Window;
+use winit::window::WindowAttributes;
 
 pub struct App {
     window: Option<Arc<Window>>,

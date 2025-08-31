@@ -1,37 +1,23 @@
-use std::{
-    cell::{
-        OnceCell,
-        RefCell,
-    },
-    num::NonZeroU32,
-    rc::Rc,
-};
+use std::cell::OnceCell;
+use std::cell::RefCell;
+use std::num::NonZeroU32;
+use std::rc::Rc;
 
 use crossbeam_queue::SegQueue;
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
-use ratatui_wgpu::{
-    Builder,
-    Dimensions,
-    Font,
-    WgpuBackend,
-};
-use web_sys::{
-    HtmlCanvasElement,
-    OffscreenCanvas,
-};
-use winit::{
-    application::ApplicationHandler,
-    event::WindowEvent,
-    event_loop::EventLoop,
-    platform::web::*,
-    window::{
-        Window,
-        WindowAttributes,
-    },
-};
+use ratatui::prelude::*;
+use ratatui::widgets::*;
+use ratatui_wgpu::Builder;
+use ratatui_wgpu::Dimensions;
+use ratatui_wgpu::Font;
+use ratatui_wgpu::WgpuBackend;
+use web_sys::HtmlCanvasElement;
+use web_sys::OffscreenCanvas;
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::EventLoop;
+use winit::platform::web::*;
+use winit::window::Window;
+use winit::window::WindowAttributes;
 
 enum Command {
     Resize { height: u32, width: u32 },

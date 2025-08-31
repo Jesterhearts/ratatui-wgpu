@@ -1,30 +1,20 @@
-use std::{
-    cell::RefCell,
-    num::NonZeroU32,
-    rc::Rc,
-};
+use std::cell::RefCell;
+use std::num::NonZeroU32;
+use std::rc::Rc;
 
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
-use ratatui_wgpu::{
-    Builder,
-    Dimensions,
-    Font,
-    WgpuBackend,
-};
+use ratatui::prelude::*;
+use ratatui::widgets::*;
+use ratatui_wgpu::Builder;
+use ratatui_wgpu::Dimensions;
+use ratatui_wgpu::Font;
+use ratatui_wgpu::WgpuBackend;
 use web_sys::HtmlCanvasElement;
-use winit::{
-    application::ApplicationHandler,
-    event::WindowEvent,
-    event_loop::EventLoop,
-    platform::web::*,
-    window::{
-        Window,
-        WindowAttributes,
-    },
-};
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::EventLoop;
+use winit::platform::web::*;
+use winit::window::Window;
+use winit::window::WindowAttributes;
 
 pub struct App {
     window: Rc<RefCell<Option<Window>>>,
