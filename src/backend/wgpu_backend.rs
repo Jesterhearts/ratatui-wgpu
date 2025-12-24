@@ -195,17 +195,21 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
             return;
         }
 
+        self.surface_config.width = width;
+        self.surface_config.height = height;
+        self.rebuild_surface();
+    }
+
+    /// Resize the rendering surface. This should be called e.g. to keep the
+    /// backend in sync with your window size.
+    fn rebuild_surface(&mut self) {
         let (inset_width, inset_height) = match self.viewport {
             Viewport::Full => (0, 0),
             Viewport::Shrink { width, height } => (width, height),
         };
 
-        let dims = self.size().unwrap();
-        let current_width = dims.width;
-        let current_height = dims.height;
-
-        self.surface_config.width = width;
-        self.surface_config.height = height;
+        let width = self.surface_config.width;
+        let height = self.surface_config.height;
         self.surface
             .configure(&self.device, &self.surface_config, Token);
 
@@ -215,13 +219,13 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         let chars_wide = width / self.fonts.min_width_px();
         let chars_high = height / self.fonts.height_px();
 
-        if chars_wide != current_width as u32 || chars_high != current_height as u32 {
-            self.cells.clear();
-            self.rendered.clear();
-            self.sourced.clear();
-            self.fast_blinking.clear();
-            self.slow_blinking.clear();
-        }
+        // if chars_wide != current_width as u32 || chars_high != current_height as u32 {
+        self.cells.clear();
+        self.rendered.clear();
+        self.sourced.clear();
+        self.fast_blinking.clear();
+        self.slow_blinking.clear();
+        // }
 
         // This always needs to be cleared because the surface is cleared when it is
         // resized. If we don't re-render the rows, we end up with a blank surface when
@@ -238,11 +242,6 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
             &self.device,
             &self.wgpu_state.text_dest_view,
             &self.surface_config,
-        );
-
-        info!(
-            "Resized from {}x{} to {}x{}",
-            current_width, current_height, chars_wide, chars_high,
         );
     }
 
@@ -282,6 +281,21 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         self.dirty_rows.clear();
         self.cached.match_fonts(&new_fonts);
         self.fonts = new_fonts;
+
+        self.rebuild_surface();
+    }
+
+    /// Update the font-size used for rendering. This will cause a full repaint of
+    /// the screen the next time [`WgpuBackend::flush`] is called.
+    pub fn update_font_size(
+        &mut self,
+        new_font_size: u32
+    ) {
+        self.dirty_rows.clear();
+        self.fonts.set_size_px(new_font_size);
+        self.cached.match_fonts(&self.fonts);
+
+        self.rebuild_surface();
     }
 
     fn render(&mut self) {
