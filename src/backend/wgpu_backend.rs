@@ -208,10 +208,6 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
             Viewport::Shrink { width, height } => (width, height),
         };
 
-        let dims = self.size().unwrap();
-        let current_width = dims.width;
-        let current_height = dims.height;
-
         let width = self.surface_config.width;
         let height = self.surface_config.height;
         self.surface
