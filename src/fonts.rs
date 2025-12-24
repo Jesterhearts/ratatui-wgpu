@@ -61,8 +61,9 @@ pub struct Fonts<'a> {
     char_width: u32,
     char_height: u32,
 
-    last_resort: Font<'a>,
+    last_resort: Vec<Font<'a>>,
 
+    has_fonts: bool,
     regular: Vec<Font<'a>>,
     bold: Vec<Font<'a>>,
     italic: Vec<Font<'a>>,
@@ -84,7 +85,41 @@ impl<'a> Fonts<'a> {
         Self {
             char_width: font.char_width(size_px),
             char_height: size_px,
-            last_resort: font,
+            last_resort: vec![font],
+            has_fonts: false,
+            regular: vec![],
+            bold: vec![],
+            italic: vec![],
+            bold_italic: vec![],
+        }
+    }
+
+    /// Create a new, empty set of fonts. The provided fonts will be used as a
+    /// last-resort fallback if no other fonts can render a particular
+    /// character. Rendering will attempt to fake bold/italic styles using this
+    /// font where appropriate.
+    ///
+    /// The expectation is, that there is only one general font in this vec,
+    /// and the rest are fallback fonts to accommodate for missing symbols and
+    /// emojis. The char-width for rendering will only be calculated by using
+    /// the first font.
+    ///
+    /// The provided size_px will be the rendered height in pixels of all fonts
+    /// in this collection.
+    ///
+    /// __Panic__
+    ///
+    /// Panics if the font-vec is empty.
+    pub fn new_with_fallbacks(
+        fonts: Vec<Font<'a>>,
+        size_px: u32,
+    ) -> Self {
+        assert!(!fonts.is_empty());
+        Self {
+            char_width: fonts[0].char_width(size_px),
+            char_height: size_px,
+            last_resort: fonts,
+            has_fonts: false,
             regular: vec![],
             bold: vec![],
             italic: vec![],
@@ -106,14 +141,19 @@ impl<'a> Fonts<'a> {
     ) {
         self.char_height = height_px;
 
-        self.char_width = std::iter::once(&self.last_resort)
-            .chain(self.regular.iter())
-            .chain(self.bold.iter())
-            .chain(self.italic.iter())
-            .chain(self.bold_italic.iter())
-            .map(|font| font.char_width(height_px))
-            .min()
-            .unwrap_or_default();
+        if self.has_fonts {
+            self.char_width = self
+                .regular
+                .iter()
+                .chain(self.bold.iter())
+                .chain(self.italic.iter())
+                .chain(self.bold_italic.iter())
+                .map(|font| font.char_width(height_px))
+                .min()
+                .unwrap_or_default();
+        } else {
+            self.char_width = self.last_resort[0].char_width(height_px);
+        }
     }
 
     /// Add a collection of fonts for various styles. They will automatically be
@@ -151,6 +191,11 @@ impl<'a> Fonts<'a> {
         self.italic[italic_len..].sort_by_key(|font| font.char_width(self.char_height));
         self.bold[bold_len..].sort_by_key(|font| font.char_width(self.char_height));
         self.regular[regular_len..].sort_by_key(|font| font.char_width(self.char_height));
+
+        self.has_fonts = !self.bold_italic.is_empty()
+            || !self.italic.is_empty()
+            || !self.bold.is_empty()
+            || !self.regular.is_empty()
     }
 
     /// Add a new collection of fonts for regular styled text. These fonts will
@@ -164,6 +209,8 @@ impl<'a> Fonts<'a> {
             fonts,
             self.char_height,
         ));
+
+        self.has_fonts = self.has_fonts || !self.regular.is_empty();
     }
 
     /// Add a new collection of fonts for bold styled text. These fonts will
@@ -181,6 +228,8 @@ impl<'a> Fonts<'a> {
             fonts,
             self.char_height,
         ));
+
+        self.has_fonts = self.has_fonts || !self.bold.is_empty();
     }
 
     /// Add a new collection of fonts for italic styled text. These fonts will
@@ -199,6 +248,7 @@ impl<'a> Fonts<'a> {
             fonts,
             self.char_height,
         ));
+        self.has_fonts = self.has_fonts || !self.italic.is_empty();
     }
 
     /// Add a new collection of fonts for bold italic styled text. These fonts
@@ -216,6 +266,7 @@ impl<'a> Fonts<'a> {
             fonts,
             self.char_height,
         ));
+        self.has_fonts = self.has_fonts || !self.bold_italic.is_empty();
     }
 }
 
@@ -284,11 +335,11 @@ impl<'a> Fonts<'a> {
     ) -> (&'fonts Font<'a>, bool, bool) {
         let mut max = 0;
         let mut font = None;
-        for (candidate, fake_bold, fake_italic) in fonts.into_iter().chain(std::iter::once((
-            &self.last_resort,
-            last_resort_fake_bold,
-            last_resort_fake_italic,
-        ))) {
+        for (candidate, fake_bold, fake_italic) in fonts.into_iter().chain(
+            self.last_resort
+                .iter()
+                .map(|v| (v, last_resort_fake_bold, last_resort_fake_italic)),
+        ) {
             let (count, last_idx) =
                 cluster
                     .chars()
@@ -308,7 +359,7 @@ impl<'a> Fonts<'a> {
         }
 
         *font.get_or_insert((
-            &self.last_resort,
+            &self.last_resort[0],
             last_resort_fake_bold,
             last_resort_fake_italic,
         ))
