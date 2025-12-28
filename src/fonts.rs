@@ -111,7 +111,7 @@ impl<'a> Fonts<'a> {
         size_px: u32,
     ) -> Self {
         Self {
-            char_width: fonts[0].char_width(size_px),
+            char_width: fonts.get(0).map(|v| v.char_width(size_px)).unwrap_or(1),
             char_height: size_px,
             last_resort: fonts,
             has_fonts: false,
@@ -147,6 +147,9 @@ impl<'a> Fonts<'a> {
                 .min()
                 .unwrap_or_default();
         } else {
+            if self.last_resort.is_empty() {
+                panic!("at least one font must be set.");
+            }
             self.char_width = self.last_resort[0].char_width(height_px);
         }
     }
@@ -296,9 +299,8 @@ impl<'a> Fonts<'a> {
                     .map(|f| (f, false, false))
                     .chain(self.italic.iter().map(|f| (f, true, false)))
                     .chain(self.bold.iter().map(|f| (f, false, true)))
-                    .chain(self.regular.iter().map(|f| (f, true, true))),
-                true,
-                true,
+                    .chain(self.regular.iter().map(|f| (f, true, true)))
+                    .chain(self.last_resort.iter().map(|v| (v, true, true))),
             )
         } else if cell.modifier.contains(Modifier::BOLD) {
             self.select_font(
@@ -306,9 +308,8 @@ impl<'a> Fonts<'a> {
                 self.bold
                     .iter()
                     .map(|f| (f, false, false))
-                    .chain(self.regular.iter().map(|f| (f, true, false))),
-                true,
-                false,
+                    .chain(self.regular.iter().map(|f| (f, true, false)))
+                    .chain(self.last_resort.iter().map(|v| (v, true, false))),
             )
         } else if cell.modifier.contains(Modifier::ITALIC) {
             self.select_font(
@@ -316,16 +317,16 @@ impl<'a> Fonts<'a> {
                 self.italic
                     .iter()
                     .map(|f| (f, false, false))
-                    .chain(self.regular.iter().map(|f| (f, false, true))),
-                false,
-                true,
+                    .chain(self.regular.iter().map(|f| (f, false, true)))
+                    .chain(self.last_resort.iter().map(|v| (v, false, true))),
             )
         } else {
             self.select_font(
                 cell.symbol(),
-                self.regular.iter().map(|f| (f, false, false)),
-                false,
-                false,
+                self.regular
+                    .iter()
+                    .map(|f| (f, false, false))
+                    .chain(self.last_resort.iter().map(|v| (v, false, false))),
             )
         }
     }
@@ -334,16 +335,12 @@ impl<'a> Fonts<'a> {
         &'fonts self,
         cluster: &str,
         fonts: impl IntoIterator<Item = (&'fonts Font<'a>, bool, bool)>,
-        last_resort_fake_bold: bool,
-        last_resort_fake_italic: bool,
     ) -> (&'fonts Font<'a>, bool, bool) {
         let mut max = 0;
         let mut font = None;
-        for (candidate, fake_bold, fake_italic) in fonts.into_iter().chain(
-            self.last_resort
-                .iter()
-                .map(|v| (v, last_resort_fake_bold, last_resort_fake_italic)),
-        ) {
+        let mut last_resort = None;
+
+        for (candidate, fake_bold, fake_italic) in fonts.into_iter() {
             let (count, last_idx) =
                 cluster
                     .chars()
@@ -352,6 +349,7 @@ impl<'a> Fonts<'a> {
                         count += usize::from(candidate.font().glyph_index(ch).is_some());
                         (count, idx)
                     });
+
             if count > max {
                 max = count;
                 font = Some((candidate, fake_bold, fake_italic));
@@ -360,13 +358,17 @@ impl<'a> Fonts<'a> {
             if count == last_idx + 1 {
                 break;
             }
+
+            last_resort = Some((candidate, fake_bold, fake_italic));
         }
 
-        *font.get_or_insert((
-            &self.last_resort[0],
-            last_resort_fake_bold,
-            last_resort_fake_italic,
-        ))
+        font.unwrap_or_else(|| {
+            if let Some(last_resort) = last_resort {
+                last_resort
+            } else {
+                panic!("at least one font must be set.");
+            }
+        })
     }
 
     fn add_fonts_internal(
