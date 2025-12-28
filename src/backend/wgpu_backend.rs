@@ -1025,11 +1025,11 @@ fn rasterize_glyph(
     actual_height: u32,
     emoji: bool
 ) -> (CacheRect, Vec<u32>, bool) {
-    let scale = (cached.width as f32 / actual_width as f32)
+    let rect_scale = (cached.width as f32 / actual_width as f32)
         .min(cached.height as f32 / actual_height as f32);
-    let computed_offset_x = -(cached.width as f32 * (1.0 - scale));
-    let computed_offset_y = cached.height as f32 * (1.0 - scale);
-    let scale = scale * advance_scale * 2.0;
+    let computed_offset_x = (cached.width as f32 - actual_width as f32 * rect_scale) / 2.0;
+    let computed_offset_y = cached.height as f32 - actual_height as f32 * rect_scale;
+    let scale = rect_scale * advance_scale * 2.0;
 
     let skew = if fake_italic {
         Transform::new(
