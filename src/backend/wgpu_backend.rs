@@ -690,7 +690,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                         let is_emoji = ch.is_emoji_char()
                             && !matches!(ch.general_category_group(), GeneralCategoryGroup::Number);
 
-                        let (rect, image) = rasterize_glyph(
+                        let (rect, image, colored) = rasterize_glyph(
                             cached,
                             metrics,
                             info,
@@ -699,7 +699,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             advance_scale,
                             width,
                         );
-                        (rect, image, is_emoji)
+                        (rect, image, colored)
                     });
                 }
 
@@ -1011,7 +1011,7 @@ fn rasterize_glyph(
     fake_bold: bool,
     advance_scale: f32,
     actual_width: u32,
-) -> (CacheRect, Vec<u32>) {
+) -> (CacheRect, Vec<u32>, bool) {
     let scale = cached.width as f32 / actual_width as f32;
     let computed_offset_x = -(cached.width as f32 * (1.0 - scale));
     let computed_offset_y = cached.height as f32 * (1.0 - scale);
@@ -1078,7 +1078,7 @@ fn rasterize_glyph(
             *argb = u32::from_le_bytes([r, g, b, a]);
         }
 
-        return (*cached, final_image);
+        return (*cached, final_image, true);
     }
 
     if let Some(raster) = metrics.glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX) {
@@ -1149,7 +1149,7 @@ fn rasterize_glyph(
             },
         );
 
-        return (*cached, final_image.into_vec());
+        return (*cached, final_image.into_vec(), false);
     }
 
     if let Some(raster) = metrics.glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX) {
@@ -1161,6 +1161,7 @@ fn rasterize_glyph(
     (
         *cached,
         vec![0u32; cached.width as usize * cached.height as usize],
+        false,
     )
 }
 
@@ -1169,7 +1170,7 @@ fn extract_color_image(
     raster: RasterGlyphImage,
     cached: Entry,
     scale: f32,
-) -> Option<(CacheRect, Vec<u32>)> {
+) -> Option<(CacheRect, Vec<u32>, bool)> {
     match raster.format {
         RasterImageFormat::PNG => {
             #[cfg(feature = "png")]
@@ -1238,7 +1239,7 @@ fn extract_color_image(
         *argb = u32::from_le_bytes([r, g, b, a]);
     }
 
-    Some((*cached, final_image))
+    Some((*cached, final_image, true))
 }
 
 fn extract_bw_image(
@@ -1246,7 +1247,7 @@ fn extract_bw_image(
     raster: RasterGlyphImage,
     cached: Entry,
     scale: f32,
-) -> Option<(CacheRect, Vec<u32>)> {
+) -> Option<(CacheRect, Vec<u32>, bool)> {
     image.resize(raster.width as usize * raster.height as usize, 0);
 
     match raster.format {
@@ -1300,7 +1301,7 @@ fn extract_bw_image(
         *argb = u32::from_le_bytes([r, g, b, a]);
     }
 
-    Some((*cached, final_image))
+    Some((*cached, final_image, false))
 }
 
 fn from_gray_unpacked<const BITS: usize, const ENTRIES: usize>(
