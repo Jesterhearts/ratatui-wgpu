@@ -642,6 +642,15 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                     } else {
                         width
                     };
+                    let height = (metrics
+                        .glyph_ver_advance(GlyphId(info.glyph_id as _))
+                        .unwrap_or_default() as f32
+                        * advance_scale) as u32;
+                    let height = if height == 0 {
+                        self.fonts.height_px()
+                    } else {
+                        height
+                    };
 
                     let cached = self.cached.get(
                         &key,
@@ -695,9 +704,11 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             metrics,
                             info,
                             fake_italic & !is_emoji,
-                            fake_bold & !is_emoji,
+                            fake_bold,
                             advance_scale,
                             width,
+                            height,
+                            is_emoji
                         );
                         (rect, image, colored)
                     });
@@ -1011,8 +1022,11 @@ fn rasterize_glyph(
     fake_bold: bool,
     advance_scale: f32,
     actual_width: u32,
+    actual_height: u32,
+    emoji: bool
 ) -> (CacheRect, Vec<u32>, bool) {
-    let scale = cached.width as f32 / actual_width as f32;
+    let scale = (cached.width as f32 / actual_width as f32)
+        .min(cached.height as f32 / actual_height as f32);
     let computed_offset_x = -(cached.width as f32 * (1.0 - scale));
     let computed_offset_y = cached.height as f32 * (1.0 - scale);
     let scale = scale * advance_scale * 2.0;
@@ -1124,7 +1138,17 @@ fn rasterize_glyph(
                 &path,
                 &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
                 &StrokeStyle {
-                    width: 1.5,
+                    width: 1.5 / scale,
+                    ..Default::default()
+                },
+                &DrawOptions::new(),
+            );
+        } else if emoji {
+            target.stroke(
+                &path,
+                &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
+                &StrokeStyle {
+                    width: 1.0 / scale,
                     ..Default::default()
                 },
                 &DrawOptions::new(),
