@@ -285,6 +285,36 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         self.rebuild_surface();
     }
 
+    /// Replace the fonts used for rendering. This will keep the fallback fonts.
+    /// If you want to replace those too, use [update_fonts].
+    ///
+    /// This will cause a full repaint of the screen the next
+    /// time [`WgpuBackend::flush`] is called.
+    pub fn update_font_vec(
+        &mut self,
+        new_fonts: Vec<Font<'f>>,
+    ) {
+        self.fonts.clear_fonts();
+        self.fonts.add_fonts(new_fonts);
+        self.dirty_rows.clear();
+        self.cached.match_fonts(&self.fonts);
+
+        self.rebuild_surface();
+    }
+
+    /// Update the font-size used for rendering. This will cause a full repaint of
+    /// the screen the next time [`WgpuBackend::flush`] is called.
+    pub fn update_font_size(
+        &mut self,
+        new_font_size: u32
+    ) {
+        self.dirty_rows.clear();
+        self.fonts.set_size_px(new_font_size);
+        self.cached.match_fonts(&self.fonts);
+
+        self.rebuild_surface();
+    }
+
     fn render(&mut self) {
         let bounds = self.window_size().unwrap();
 

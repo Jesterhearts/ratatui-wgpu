@@ -106,15 +106,10 @@ impl<'a> Fonts<'a> {
     ///
     /// The provided size_px will be the rendered height in pixels of all fonts
     /// in this collection.
-    ///
-    /// __Panic__
-    ///
-    /// Panics if the font-vec is empty.
-    pub fn new_with_fallbacks(
+    pub fn new_vec(
         fonts: Vec<Font<'a>>,
         size_px: u32,
     ) -> Self {
-        assert!(!fonts.is_empty());
         Self {
             char_width: fonts[0].char_width(size_px),
             char_height: size_px,
@@ -154,6 +149,15 @@ impl<'a> Fonts<'a> {
         } else {
             self.char_width = self.last_resort[0].char_width(height_px);
         }
+    }
+
+    /// Remove the non-fallback fonts.
+    pub fn clear_fonts(&mut self) {
+        self.bold_italic.clear();
+        self.italic.clear();
+        self.bold.clear();
+        self.regular.clear();
+        self.has_fonts = false;
     }
 
     /// Add a collection of fonts for various styles. They will automatically be

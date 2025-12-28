@@ -128,6 +128,26 @@ where
             slow_blink: Duration::from_millis(1000),
         }
     }
+
+    /// Create a new Builder from a list of [`Font`] and default
+    /// [`PostProcessor::UserData`].
+    pub fn from_fonts(fonts: Vec<Font<'a>>) -> Self {
+        Self {
+            user_data: Default::default(),
+            instance: None,
+            fonts: Fonts::new_vec(fonts, 24),
+            limits: None,
+            present_mode: None,
+            width: NonZeroU32::new(1).unwrap(),
+            height: NonZeroU32::new(1).unwrap(),
+            viewport: Viewport::Full,
+            colors: named::DEFAULT_COLORS,
+            reset_fg: Color::Black,
+            reset_bg: Color::White,
+            fast_blink: Duration::from_millis(200),
+            slow_blink: Duration::from_millis(1000),
+        }
+    }
 }
 
 impl<'a, P: PostProcessor> Builder<'a, P> {
