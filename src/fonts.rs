@@ -290,43 +290,43 @@ impl<'a> Fonts<'a> {
     pub(crate) fn font_for_cell(
         &'_ self,
         cell: &Cell,
-    ) -> (&'_ Font<'_>, bool, bool) {
+    ) -> (&'_ Font<'_>, bool, bool, bool) {
         if cell.modifier.contains(Modifier::BOLD | Modifier::ITALIC) {
             self.select_font(
                 cell.symbol(),
                 self.bold_italic
                     .iter()
-                    .map(|f| (f, false, false))
-                    .chain(self.italic.iter().map(|f| (f, true, false)))
-                    .chain(self.bold.iter().map(|f| (f, false, true)))
-                    .chain(self.regular.iter().map(|f| (f, true, true)))
-                    .chain(self.last_resort.iter().map(|v| (v, true, true))),
+                    .map(|f| (f, false, false, false))
+                    .chain(self.italic.iter().map(|f| (f, true, false, false)))
+                    .chain(self.bold.iter().map(|f| (f, false, true, false)))
+                    .chain(self.regular.iter().map(|f| (f, true, true, false)))
+                    .chain(self.last_resort.iter().map(|v| (v, true, true, true))),
             )
         } else if cell.modifier.contains(Modifier::BOLD) {
             self.select_font(
                 cell.symbol(),
                 self.bold
                     .iter()
-                    .map(|f| (f, false, false))
-                    .chain(self.regular.iter().map(|f| (f, true, false)))
-                    .chain(self.last_resort.iter().map(|v| (v, true, false))),
+                    .map(|f| (f, false, false, false))
+                    .chain(self.regular.iter().map(|f| (f, true, false, false)))
+                    .chain(self.last_resort.iter().map(|v| (v, true, false, true))),
             )
         } else if cell.modifier.contains(Modifier::ITALIC) {
             self.select_font(
                 cell.symbol(),
                 self.italic
                     .iter()
-                    .map(|f| (f, false, false))
-                    .chain(self.regular.iter().map(|f| (f, false, true)))
-                    .chain(self.last_resort.iter().map(|v| (v, false, true))),
+                    .map(|f| (f, false, false, false))
+                    .chain(self.regular.iter().map(|f| (f, false, true, false)))
+                    .chain(self.last_resort.iter().map(|v| (v, false, true, true))),
             )
         } else {
             self.select_font(
                 cell.symbol(),
                 self.regular
                     .iter()
-                    .map(|f| (f, false, false))
-                    .chain(self.last_resort.iter().map(|v| (v, false, false))),
+                    .map(|f| (f, false, false, false))
+                    .chain(self.last_resort.iter().map(|v| (v, false, false, true))),
             )
         }
     }
@@ -334,13 +334,13 @@ impl<'a> Fonts<'a> {
     fn select_font<'fonts>(
         &'fonts self,
         cluster: &str,
-        fonts: impl IntoIterator<Item = (&'fonts Font<'a>, bool, bool)>,
-    ) -> (&'fonts Font<'a>, bool, bool) {
+        fonts: impl IntoIterator<Item = (&'fonts Font<'a>, bool, bool, bool)>,
+    ) -> (&'fonts Font<'a>, bool, bool, bool) {
         let mut max = 0;
         let mut font = None;
         let mut last_resort = None;
 
-        for (candidate, fake_bold, fake_italic) in fonts.into_iter() {
+        for (candidate, fake_bold, fake_italic, is_fallback) in fonts.into_iter() {
             let (count, last_idx) =
                 cluster
                     .chars()
@@ -352,14 +352,14 @@ impl<'a> Fonts<'a> {
 
             if count > max {
                 max = count;
-                font = Some((candidate, fake_bold, fake_italic));
+                font = Some((candidate, fake_bold, fake_italic, is_fallback));
             }
 
             if count == last_idx + 1 {
                 break;
             }
 
-            last_resort = Some((candidate, fake_bold, fake_italic));
+            last_resort = Some((candidate, fake_bold, fake_italic, is_fallback));
         }
 
         font.unwrap_or_else(|| {
