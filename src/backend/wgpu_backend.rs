@@ -632,25 +632,19 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                     };
 
                     let ch = self.row[info.cluster as usize..].chars().next().unwrap();
+                    let chars_wide = ch.width().unwrap_or(max_width) as u32;
+                    let chars_wide = if chars_wide == 0 { 1 } else { chars_wide };
+
+                    let ascender = self.fonts.ascender_px();
+
                     let width = (metrics
                         .glyph_hor_advance(GlyphId(info.glyph_id as _))
                         .unwrap_or_default() as f32
                         * advance_scale) as u32;
-                    let chars_wide = ch.width().unwrap_or(max_width) as u32;
-                    let chars_wide = if chars_wide == 0 { 1 } else { chars_wide };
                     let width = if width == 0 {
                         chars_wide * self.fonts.min_width_px()
                     } else {
                         width
-                    };
-                    let height = (metrics
-                        .glyph_ver_advance(GlyphId(info.glyph_id as _))
-                        .unwrap_or_default() as f32
-                        * advance_scale) as u32;
-                    let height = if height == 0 {
-                        self.fonts.height_px()
-                    } else {
-                        height
                     };
 
                     let cached = self.cached.get(
@@ -670,7 +664,13 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                     let mut underline_pos_min = 0;
                     let mut underline_pos_max = 0;
                     if key.style.contains(Modifier::UNDERLINED) {
-                        let underline_position = (metrics.ascender() as f32 * advance_scale) as u16;
+                        let underline_position = metrics
+                            .underline_metrics()
+                            .map(|m| m.position as f32)
+                            .unwrap_or(0.0);
+                        let underline_position = (underline_position * advance_scale) as u32;
+                        let underline_position = (ascender - underline_position) as u16;
+
                         let underline_thickness = metrics
                             .underline_metrics()
                             .map(|m| (m.thickness as f32 * advance_scale) as u16)
@@ -708,7 +708,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             fake_bold,
                             advance_scale,
                             width,
-                            height,
+                            ascender,
                             is_emoji,
                             is_fallback,
                         );
@@ -1033,17 +1033,33 @@ fn rasterize_glyph(
     fake_bold: bool,
     advance_scale: f32,
     actual_width: u32,
-    actual_height: u32,
+    ascender: u32,
     emoji: bool,
     is_fallback: bool,
 ) -> (CacheRect, Vec<u32>, bool) {
-    let rect_scale = if is_fallback {
-        (cached.width as f32 / actual_width as f32).min(cached.height as f32 / actual_height as f32)
+    let rect_scale;
+
+    let computed_offset_x;
+    let computed_offset_y;
+
+    if is_fallback {
+        // glyphs from a fallback font will probably not fit.
+        // scale them down either vertically or horizontally, whatever fits.
+        // then align them centered.
+        // and later render them at the same baseline as the regular font.
+        let actual_height = (metrics.height() as f32 * advance_scale) as u32;
+        rect_scale = (cached.width as f32 / actual_width as f32)
+            .min(cached.height as f32 / actual_height as f32);
+        computed_offset_x = (cached.width as f32 - actual_width as f32 * rect_scale) / 2.0;
+        computed_offset_y = cached.height as f32 - actual_height as f32 * rect_scale;
     } else {
-        cached.width as f32 / actual_width as f32
+        // regular fonts will probably from one font family and therefore have
+        // more regular properties.
+        rect_scale = cached.width as f32 / actual_width as f32;
+        computed_offset_x = -(cached.width as f32 * (1.0 - rect_scale));
+        computed_offset_y = cached.height as f32 * (1.0 - rect_scale);
     };
-    let computed_offset_x = (cached.width as f32 - actual_width as f32 * rect_scale) / 2.0;
-    let computed_offset_y = cached.height as f32 - actual_height as f32 * rect_scale;
+
     let scale = rect_scale * advance_scale * 2.0;
 
     let skew = if fake_italic {
@@ -1071,7 +1087,7 @@ fn rasterize_glyph(
         &mut target,
         skew,
         scale,
-        metrics.ascender() as f32 * scale + computed_offset_y,
+        ascender as f32 * 2.0 + computed_offset_y,
         computed_offset_x,
     );
     if metrics
@@ -1129,7 +1145,7 @@ fn rasterize_glyph(
             0.
         };
         let x_off = x_off * scale + computed_offset_x;
-        let y_off = metrics.ascender() as f32 * scale + computed_offset_y;
+        let y_off = ascender as f32 * 2.0 + computed_offset_y;
 
         let mut target = DrawTarget::from_backing(
             cached.width as i32 * 2,
@@ -1158,7 +1174,7 @@ fn rasterize_glyph(
                 },
                 &DrawOptions::new(),
             );
-        } else if emoji {
+        } else if emoji || is_fallback {
             target.stroke(
                 &path,
                 &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),

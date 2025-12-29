@@ -43,6 +43,14 @@ impl Font<'_> {
         &self.font
     }
 
+    pub(crate) fn ascender(
+        &self,
+        height_px: u32,
+    ) -> u32 {
+        let scale = height_px as f32 / self.font.height() as f32;
+        (self.font.ascender() as f32 * scale) as u32
+    }
+
     pub(crate) fn char_width(
         &self,
         height_px: u32,
@@ -60,6 +68,7 @@ impl Font<'_> {
 pub struct Fonts<'a> {
     char_width: u32,
     char_height: u32,
+    ascender: u32,
 
     last_resort: Vec<Font<'a>>,
 
@@ -85,6 +94,7 @@ impl<'a> Fonts<'a> {
         Self {
             char_width: font.char_width(size_px),
             char_height: size_px,
+            ascender: font.ascender(size_px),
             last_resort: vec![font],
             has_fonts: false,
             regular: vec![],
@@ -99,10 +109,8 @@ impl<'a> Fonts<'a> {
     /// character. Rendering will attempt to fake bold/italic styles using this
     /// font where appropriate.
     ///
-    /// The expectation is, that there is only one general font in this vec,
-    /// and the rest are fallback fonts to accommodate for missing symbols and
-    /// emojis. The char-width for rendering will only be calculated by using
-    /// the first font.
+    /// The expectation is that the fallback fonts accommodate for missing symbols
+    /// and emojis. Any fonts used for actual text display should use [add_fonts]
     ///
     /// The provided size_px will be the rendered height in pixels of all fonts
     /// in this collection.
@@ -111,8 +119,9 @@ impl<'a> Fonts<'a> {
         size_px: u32,
     ) -> Self {
         Self {
-            char_width: fonts.get(0).map(|v| v.char_width(size_px)).unwrap_or(1),
+            char_width: size_px / 2,
             char_height: size_px,
+            ascender: size_px,
             last_resort: fonts,
             has_fonts: false,
             regular: vec![],
@@ -128,6 +137,11 @@ impl<'a> Fonts<'a> {
         self.char_height
     }
 
+    #[inline]
+    pub fn ascender_px(&self) -> u32 {
+        self.ascender
+    }
+
     /// Change the height of all fonts in this collection to the specified
     /// height in pixels.
     pub fn set_size_px(
@@ -137,20 +151,18 @@ impl<'a> Fonts<'a> {
         self.char_height = height_px;
 
         if self.has_fonts {
-            self.char_width = self
+            (self.char_width, self.ascender) = self
                 .regular
                 .iter()
                 .chain(self.bold.iter())
                 .chain(self.italic.iter())
                 .chain(self.bold_italic.iter())
-                .map(|font| font.char_width(height_px))
+                .map(|font| (font.char_width(height_px), font.ascender(height_px)))
                 .min()
                 .unwrap_or_default();
         } else {
-            if self.last_resort.is_empty() {
-                panic!("at least one font must be set.");
-            }
-            self.char_width = self.last_resort[0].char_width(height_px);
+            self.char_width = self.char_height / 2;
+            self.ascender = self.char_height;
         }
     }
 
@@ -182,7 +194,6 @@ impl<'a> Fonts<'a> {
                 warn!("Non monospace font used in add_fonts, this may cause unexpected rendering.");
             }
 
-            self.char_width = self.char_width.min(font.char_width(self.char_height));
             if font.font().is_italic() && font.font().is_bold() {
                 self.bold_italic.push(font);
             } else if font.font().is_italic() {
@@ -202,7 +213,9 @@ impl<'a> Fonts<'a> {
         self.has_fonts = !self.bold_italic.is_empty()
             || !self.italic.is_empty()
             || !self.bold.is_empty()
-            || !self.regular.is_empty()
+            || !self.regular.is_empty();
+
+        self.set_size_px(self.char_height);
     }
 
     /// Add a new collection of fonts for regular styled text. These fonts will
@@ -211,13 +224,9 @@ impl<'a> Fonts<'a> {
         &mut self,
         fonts: impl IntoIterator<Item = Font<'a>>,
     ) {
-        self.char_width = self.char_width.min(Self::add_fonts_internal(
-            &mut self.regular,
-            fonts,
-            self.char_height,
-        ));
-
+        self.regular.extend(fonts.into_iter());
         self.has_fonts = self.has_fonts || !self.regular.is_empty();
+        self.set_size_px(self.char_height);
     }
 
     /// Add a new collection of fonts for bold styled text. These fonts will
@@ -230,13 +239,9 @@ impl<'a> Fonts<'a> {
         &mut self,
         fonts: impl IntoIterator<Item = Font<'a>>,
     ) {
-        self.char_width = self.char_width.min(Self::add_fonts_internal(
-            &mut self.bold,
-            fonts,
-            self.char_height,
-        ));
-
+        self.bold.extend(fonts.into_iter());
         self.has_fonts = self.has_fonts || !self.bold.is_empty();
+        self.set_size_px(self.char_height);
     }
 
     /// Add a new collection of fonts for italic styled text. These fonts will
@@ -250,12 +255,9 @@ impl<'a> Fonts<'a> {
         &mut self,
         fonts: impl IntoIterator<Item = Font<'a>>,
     ) {
-        self.char_width = self.char_width.min(Self::add_fonts_internal(
-            &mut self.italic,
-            fonts,
-            self.char_height,
-        ));
+        self.italic.extend(fonts.into_iter());
         self.has_fonts = self.has_fonts || !self.italic.is_empty();
+        self.set_size_px(self.char_height);
     }
 
     /// Add a new collection of fonts for bold italic styled text. These fonts
@@ -268,12 +270,9 @@ impl<'a> Fonts<'a> {
         &mut self,
         fonts: impl IntoIterator<Item = Font<'a>>,
     ) {
-        self.char_width = self.char_width.min(Self::add_fonts_internal(
-            &mut self.bold_italic,
-            fonts,
-            self.char_height,
-        ));
+        self.bold_italic.extend(fonts.into_iter());
         self.has_fonts = self.has_fonts || !self.bold_italic.is_empty();
+        self.set_size_px(self.char_height);
     }
 }
 
@@ -369,20 +368,5 @@ impl<'a> Fonts<'a> {
                 panic!("at least one font must be set.");
             }
         })
-    }
-
-    fn add_fonts_internal(
-        target: &mut Vec<Font<'a>>,
-        fonts: impl IntoIterator<Item = Font<'a>>,
-        char_height: u32,
-    ) -> u32 {
-        let len = target.len();
-        target.extend(fonts);
-
-        target[len..]
-            .iter()
-            .map(|font| font.char_width(char_height))
-            .min()
-            .unwrap_or(u32::MAX)
     }
 }
