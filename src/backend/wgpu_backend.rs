@@ -666,11 +666,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                         self.fonts.height_px(),
                     );
 
-                    let offset = (basey.max(0) as usize / self.fonts.height_px() as usize)
-                        .min(bounds.height as usize - 1)
-                        * bounds.width as usize
-                        + (basex.max(0) as usize / self.fonts.min_width_px() as usize)
-                            .min(bounds.width as usize - 1);
+                    let offset = y.min(bounds.height as usize - 1) * bounds.width as usize
+                        + cell_idx.min(bounds.width as usize - 1);
 
                     sourced.insert((basex, basey, GlyphId(info.glyph_id as _), chars_wide));
 
