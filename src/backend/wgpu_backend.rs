@@ -649,27 +649,28 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                         Modifier::BOLD | Modifier::ITALIC
                     };
 
+                    let ch = self.row[info.cluster as usize..].chars().next().unwrap();
+                    let chars_wide = ch.width().unwrap_or(max_width).max(1) as u8;
+
                     let key = Key {
                         style: cell.modifier.intersection(set),
                         glyph: info.glyph_id,
+                        width: chars_wide,
                         font: font.id(),
                     };
-
-                    let ch = self.row[info.cluster as usize..].chars().next().unwrap();
-                    let chars_wide = ch.width().unwrap_or(max_width).max(1) as u32;
 
                     let ascender = self.fonts.ascender_px();
 
                     let cached = self.cached.get(
                         &key,
-                        chars_wide * self.fonts.min_width_px(),
+                        chars_wide as u32 * self.fonts.min_width_px(),
                         self.fonts.height_px(),
                     );
 
                     let offset = y.min(bounds.height as usize - 1) * bounds.width as usize
                         + cell_idx.min(bounds.width as usize - 1);
 
-                    sourced.insert((basex, basey, GlyphId(info.glyph_id as _), chars_wide));
+                    sourced.insert((basex, basey, GlyphId(info.glyph_id as _), chars_wide as u32));
 
                     let mut underline_pos_min = 0;
                     let mut underline_pos_max = 0;
