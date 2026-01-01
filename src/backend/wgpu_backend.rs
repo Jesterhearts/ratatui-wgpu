@@ -656,20 +656,9 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                     };
 
                     let ch = self.row[info.cluster as usize..].chars().next().unwrap();
-                    let chars_wide = ch.width().unwrap_or(max_width) as u32;
-                    let chars_wide = if chars_wide == 0 { 1 } else { chars_wide };
+                    let chars_wide = ch.width().unwrap_or(max_width).max(1) as u32;
 
                     let ascender = self.fonts.ascender_px();
-
-                    let width = (metrics
-                        .glyph_hor_advance(GlyphId(info.glyph_id as _))
-                        .unwrap_or_default() as f32
-                        * advance_scale) as u32;
-                    let width = if width == 0 {
-                        chars_wide * self.fonts.min_width_px()
-                    } else {
-                        width
-                    };
 
                     let cached = self.cached.get(
                         &key,
@@ -731,7 +720,6 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             fake_italic & !is_emoji,
                             fake_bold,
                             advance_scale,
-                            width,
                             ascender,
                             is_emoji,
                             is_fallback,
@@ -1056,11 +1044,20 @@ fn rasterize_glyph(
     fake_italic: bool,
     fake_bold: bool,
     advance_scale: f32,
-    actual_width: u32,
     ascender: u32,
     emoji: bool,
     is_fallback: bool,
 ) -> (CacheRect, Vec<u32>, bool) {
+    let actual_width = (metrics
+        .glyph_hor_advance(GlyphId(info.glyph_id as _))
+        .unwrap_or_default() as f32
+        * advance_scale) as u32;
+    let actual_width = if actual_width == 0 {
+        cached.width
+    } else {
+        actual_width
+    };
+
     let rect_scale;
 
     let computed_offset_x;
