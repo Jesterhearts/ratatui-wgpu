@@ -382,6 +382,8 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
 }
 
 impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's, P, S> {
+    type Error = std::io::Error;
+
     fn draw<'a, I>(
         &mut self,
         content: I,
