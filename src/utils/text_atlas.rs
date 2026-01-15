@@ -10,6 +10,7 @@ use crate::Fonts;
 pub(crate) struct Key {
     pub(crate) style: Modifier,
     pub(crate) glyph: u32,
+    pub(crate) width: u8,
     pub(crate) font: u64,
 }
 
@@ -178,6 +179,7 @@ mod tests {
                 &Key {
                     style: Modifier::default(),
                     glyph: idx as _,
+                    width: 1,
                     font: idx as _,
                 },
                 12,
@@ -188,6 +190,7 @@ mod tests {
         let last_key = Key {
             style: Modifier::default(),
             glyph: u32::MAX,
+            width: 1,
             font: u32::MAX as _,
         };
 

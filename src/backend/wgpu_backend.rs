@@ -195,17 +195,21 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
             return;
         }
 
+        self.surface_config.width = width;
+        self.surface_config.height = height;
+        self.rebuild_surface();
+    }
+
+    /// Resize the rendering surface. This should be called e.g. to keep the
+    /// backend in sync with your window size.
+    fn rebuild_surface(&mut self) {
         let (inset_width, inset_height) = match self.viewport {
             Viewport::Full => (0, 0),
             Viewport::Shrink { width, height } => (width, height),
         };
 
-        let dims = self.size().unwrap();
-        let current_width = dims.width;
-        let current_height = dims.height;
-
-        self.surface_config.width = width;
-        self.surface_config.height = height;
+        let width = self.surface_config.width;
+        let height = self.surface_config.height;
         self.surface
             .configure(&self.device, &self.surface_config, Token);
 
@@ -215,13 +219,13 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         let chars_wide = width / self.fonts.min_width_px();
         let chars_high = height / self.fonts.height_px();
 
-        if chars_wide != current_width as u32 || chars_high != current_height as u32 {
-            self.cells.clear();
-            self.rendered.clear();
-            self.sourced.clear();
-            self.fast_blinking.clear();
-            self.slow_blinking.clear();
-        }
+        // if chars_wide != current_width as u32 || chars_high != current_height as u32 {
+        self.cells.clear();
+        self.rendered.clear();
+        self.sourced.clear();
+        self.fast_blinking.clear();
+        self.slow_blinking.clear();
+        // }
 
         // This always needs to be cleared because the surface is cleared when it is
         // resized. If we don't re-render the rows, we end up with a blank surface when
@@ -238,11 +242,6 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
             &self.device,
             &self.wgpu_state.text_dest_view,
             &self.surface_config,
-        );
-
-        info!(
-            "Resized from {}x{} to {}x{}",
-            current_width, current_height, chars_wide, chars_high,
         );
     }
 
@@ -282,6 +281,38 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         self.dirty_rows.clear();
         self.cached.match_fonts(&new_fonts);
         self.fonts = new_fonts;
+
+        self.rebuild_surface();
+    }
+
+    /// Replace the fonts used for rendering. This will keep the fallback fonts.
+    /// If you want to replace those too, use [update_fonts].
+    ///
+    /// This will cause a full repaint of the screen the next
+    /// time [`WgpuBackend::flush`] is called.
+    pub fn update_font_vec(
+        &mut self,
+        new_fonts: Vec<Font<'f>>,
+    ) {
+        self.fonts.clear_fonts();
+        self.fonts.add_fonts(new_fonts);
+        self.dirty_rows.clear();
+        self.cached.match_fonts(&self.fonts);
+
+        self.rebuild_surface();
+    }
+
+    /// Update the font-size used for rendering. This will cause a full repaint of
+    /// the screen the next time [`WgpuBackend::flush`] is called.
+    pub fn update_font_size(
+        &mut self,
+        new_font_size: u32
+    ) {
+        self.dirty_rows.clear();
+        self.fonts.set_size_px(new_font_size);
+        self.cached.match_fonts(&self.fonts);
+
+        self.rebuild_surface();
     }
 
     fn render(&mut self) {
@@ -556,10 +587,12 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
             // cell. This assumes that we 1) always get a non-zero advance at the beginning
             // of a cluster and 2) the next cluster in the sequence starts with a non-zero
             // advance.
-            let mut next_advance = 0;
+            let mut last_cell_idx = 0;
+            let mut last_advance = 0;
             let mut shape = |font: &Font,
                              fake_bold,
                              fake_italic,
+                             is_fallback,
                              buffer: GlyphBuffer|
              -> UnicodeBuffer {
                 let metrics = font.font();
@@ -575,63 +608,82 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                     let max_width = cell.symbol().width();
                     let sourced = &mut new_sourced[cell_idx];
 
+                    // Every cell has it's defined position on the grid.
+                    // This position is used as a starting point from which
+                    // every glyph in the cell is positioned.
+                    if last_cell_idx != cell_idx {
+                        x = cell_idx as i32 * self.fonts.min_width_px() as i32;
+                    }
+
+                    // if we have a combining '.undef' skip it completely.
+                    if last_cell_idx == cell_idx {
+                        if info.glyph_id == 0 {
+                            continue;
+                        }
+                    }
+
+                    last_cell_idx = cell_idx;
+
+                    let glyph_advance = (position.x_advance as f32 * advance_scale) as i32;
+                    let glyph_offset = (position.x_offset as f32 * advance_scale) as i32;
+
                     let basey = y as i32 * self.fonts.height_px() as i32
                         + (position.y_offset as f32 * advance_scale) as i32;
-                    let mut advance = (position.x_advance as f32 * advance_scale) as i32;
-                    if advance != 0 {
-                        x += next_advance;
-                        advance =
-                            max_width as i32 * advance.signum() * self.fonts.min_width_px() as i32;
-                        next_advance = advance;
+                    let mut basex = x + glyph_offset;
+
+                    // special case: combining glyphs with offset == 0 && advance == 0
+                    if glyph_advance == 0 && glyph_offset == 0 {
+                        basex -= last_advance;
                     }
-                    let basex = x + (position.x_offset as f32 * advance_scale) as i32;
+                    if glyph_advance > 0 {
+                        last_advance = glyph_advance;
+                    }
+
+                    // advance
+                    x += glyph_advance;
 
                     // This assumes that we only want to underline the first character in the
                     // cluster, and that the remaining characters are all combining characters
                     // which don't need an underline.
-                    let set = if advance != 0 {
+                    let set = if glyph_advance != 0 {
                         Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED
                     } else {
                         Modifier::BOLD | Modifier::ITALIC
                     };
 
+                    let ch = self.row[info.cluster as usize..].chars().next().unwrap();
+                    let chars_wide = ch.width().unwrap_or(max_width).max(1) as u8;
+
                     let key = Key {
                         style: cell.modifier.intersection(set),
                         glyph: info.glyph_id,
+                        width: chars_wide,
                         font: font.id(),
                     };
 
-                    let ch = self.row[info.cluster as usize..].chars().next().unwrap();
-                    let width = (metrics
-                        .glyph_hor_advance(GlyphId(info.glyph_id as _))
-                        .unwrap_or_default() as f32
-                        * advance_scale) as u32;
-                    let chars_wide = ch.width().unwrap_or(max_width) as u32;
-                    let chars_wide = if chars_wide == 0 { 1 } else { chars_wide };
-                    let width = if width == 0 {
-                        chars_wide * self.fonts.min_width_px()
-                    } else {
-                        width
-                    };
+                    let ascender = self.fonts.ascender_px();
 
                     let cached = self.cached.get(
                         &key,
-                        chars_wide * self.fonts.min_width_px(),
+                        chars_wide as u32 * self.fonts.min_width_px(),
                         self.fonts.height_px(),
                     );
 
-                    let offset = (basey.max(0) as usize / self.fonts.height_px() as usize)
-                        .min(bounds.height as usize - 1)
-                        * bounds.width as usize
-                        + (basex.max(0) as usize / self.fonts.min_width_px() as usize)
-                            .min(bounds.width as usize - 1);
+                    let offset = y.min(bounds.height as usize - 1) * bounds.width as usize
+                        + cell_idx.min(bounds.width as usize - 1);
 
-                    sourced.insert((basex, basey, GlyphId(info.glyph_id as _), chars_wide));
+                    sourced.insert((basex, basey, GlyphId(info.glyph_id as _), chars_wide as u32));
 
                     let mut underline_pos_min = 0;
                     let mut underline_pos_max = 0;
                     if key.style.contains(Modifier::UNDERLINED) {
-                        let underline_position = (metrics.ascender() as f32 * advance_scale) as u16;
+                        let underline_position = metrics
+                            .underline_metrics()
+                            .map(|m| m.position as f32)
+                            .unwrap_or(0.0);
+                        let underline_position = (underline_position * advance_scale) as u32;
+                        let underline_position = (ascender - underline_position) as u16;
+
                         let underline_thickness = metrics
                             .underline_metrics()
                             .map(|m| (m.thickness as f32 * advance_scale) as u16)
@@ -661,16 +713,18 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                         let is_emoji = ch.is_emoji_char()
                             && !matches!(ch.general_category_group(), GeneralCategoryGroup::Number);
 
-                        let (rect, image) = rasterize_glyph(
+                        let (rect, image, colored) = rasterize_glyph(
                             cached,
                             metrics,
                             info,
                             fake_italic & !is_emoji,
-                            fake_bold & !is_emoji,
+                            fake_bold,
                             advance_scale,
-                            width,
+                            ascender,
+                            is_emoji,
+                            is_fallback,
                         );
-                        (rect, image, is_emoji)
+                        (rect, image, colored)
                     });
                 }
 
@@ -680,7 +734,12 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
             let bidi = ParagraphBidiInfo::new(&self.row, None);
             let (levels, runs) = bidi.visual_runs(0..bidi.levels.len());
 
-            let (mut current_font, mut current_fake_bold, mut current_fake_italic) = fontmap[0];
+            let (
+                mut current_font,
+                mut current_fake_bold,
+                mut current_fake_italic,
+                mut current_is_fallback,
+            ) = fontmap[0];
             let mut current_level = Level::ltr();
 
             for (level, range) in runs.into_iter().map(|run| (levels[run.start], run)) {
@@ -688,11 +747,12 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                 let cells = &self.rowmap[range.clone()];
                 for (idx, ch) in chars.char_indices() {
                     let cell_idx = cells[idx] as usize;
-                    let (font, fake_bold, fake_italic) = fontmap[cell_idx];
+                    let (font, fake_bold, fake_italic, is_fallback) = fontmap[cell_idx];
 
                     if font.id() != current_font.id()
                         || current_fake_bold != fake_bold
                         || current_fake_italic != fake_italic
+                        || current_is_fallback != is_fallback
                         || current_level != level
                     {
                         let mut buffer = std::mem::take(&mut self.buffer);
@@ -701,6 +761,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             current_font,
                             current_fake_bold,
                             current_fake_italic,
+                            current_is_fallback,
                             shape_with_plan(
                                 current_font.font(),
                                 self.plan_cache.get(current_font, &mut buffer),
@@ -711,6 +772,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                         current_font = font;
                         current_fake_bold = fake_bold;
                         current_fake_italic = fake_italic;
+                        current_is_fallback = is_fallback;
                         current_level = level;
                     }
 
@@ -723,6 +785,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                 current_font,
                 current_fake_bold,
                 current_fake_italic,
+                current_is_fallback,
                 shape_with_plan(
                     current_font.font(),
                     self.plan_cache.get(current_font, &mut buffer),
@@ -981,12 +1044,44 @@ fn rasterize_glyph(
     fake_italic: bool,
     fake_bold: bool,
     advance_scale: f32,
-    actual_width: u32,
-) -> (CacheRect, Vec<u32>) {
-    let scale = cached.width as f32 / actual_width as f32;
-    let computed_offset_x = -(cached.width as f32 * (1.0 - scale));
-    let computed_offset_y = cached.height as f32 * (1.0 - scale);
-    let scale = scale * advance_scale * 2.0;
+    ascender: u32,
+    emoji: bool,
+    is_fallback: bool,
+) -> (CacheRect, Vec<u32>, bool) {
+    let actual_width = (metrics
+        .glyph_hor_advance(GlyphId(info.glyph_id as _))
+        .unwrap_or_default() as f32
+        * advance_scale) as u32;
+    let actual_width = if actual_width == 0 {
+        cached.width
+    } else {
+        actual_width
+    };
+
+    let rect_scale;
+
+    let computed_offset_x;
+    let computed_offset_y;
+
+    if is_fallback {
+        // glyphs from a fallback font will probably not fit.
+        // scale them down either vertically or horizontally, whatever fits.
+        // then align them centered.
+        // and later render them at the same baseline as the regular font.
+        let actual_height = (metrics.height() as f32 * advance_scale) as u32;
+        rect_scale = (cached.width as f32 / actual_width as f32)
+            .min(cached.height as f32 / actual_height as f32);
+        computed_offset_x = (cached.width as f32 - actual_width as f32 * rect_scale) / 2.0;
+        computed_offset_y = cached.height as f32 - actual_height as f32 * rect_scale;
+    } else {
+        // regular fonts will probably from one font family and therefore have
+        // more regular properties.
+        rect_scale = cached.width as f32 / actual_width as f32;
+        computed_offset_x = -(cached.width as f32 * (1.0 - rect_scale));
+        computed_offset_y = cached.height as f32 * (1.0 - rect_scale);
+    };
+
+    let scale = rect_scale * advance_scale * 2.0;
 
     let skew = if fake_italic {
         Transform::new(
@@ -1013,7 +1108,7 @@ fn rasterize_glyph(
         &mut target,
         skew,
         scale,
-        metrics.ascender() as f32 * scale + computed_offset_y,
+        ascender as f32 * 2.0 + computed_offset_y,
         computed_offset_x,
     );
     if metrics
@@ -1049,7 +1144,7 @@ fn rasterize_glyph(
             *argb = u32::from_le_bytes([r, g, b, a]);
         }
 
-        return (*cached, final_image);
+        return (*cached, final_image, true);
     }
 
     if let Some(raster) = metrics.glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX) {
@@ -1071,7 +1166,7 @@ fn rasterize_glyph(
             0.
         };
         let x_off = x_off * scale + computed_offset_x;
-        let y_off = metrics.ascender() as f32 * scale + computed_offset_y;
+        let y_off = ascender as f32 * 2.0 + computed_offset_y;
 
         let mut target = DrawTarget::from_backing(
             cached.width as i32 * 2,
@@ -1095,7 +1190,17 @@ fn rasterize_glyph(
                 &path,
                 &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
                 &StrokeStyle {
-                    width: 1.5,
+                    width: 1.5 / scale,
+                    ..Default::default()
+                },
+                &DrawOptions::new(),
+            );
+        } else if emoji || is_fallback {
+            target.stroke(
+                &path,
+                &raqote::Source::Solid(SolidSource::from_unpremultiplied_argb(255, 255, 255, 255)),
+                &StrokeStyle {
+                    width: 1.0 / scale,
                     ..Default::default()
                 },
                 &DrawOptions::new(),
@@ -1120,7 +1225,7 @@ fn rasterize_glyph(
             },
         );
 
-        return (*cached, final_image.into_vec());
+        return (*cached, final_image.into_vec(), false);
     }
 
     if let Some(raster) = metrics.glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX) {
@@ -1132,6 +1237,7 @@ fn rasterize_glyph(
     (
         *cached,
         vec![0u32; cached.width as usize * cached.height as usize],
+        false,
     )
 }
 
@@ -1140,7 +1246,7 @@ fn extract_color_image(
     raster: RasterGlyphImage,
     cached: Entry,
     scale: f32,
-) -> Option<(CacheRect, Vec<u32>)> {
+) -> Option<(CacheRect, Vec<u32>, bool)> {
     match raster.format {
         RasterImageFormat::PNG => {
             #[cfg(feature = "png")]
@@ -1209,7 +1315,7 @@ fn extract_color_image(
         *argb = u32::from_le_bytes([r, g, b, a]);
     }
 
-    Some((*cached, final_image))
+    Some((*cached, final_image, true))
 }
 
 fn extract_bw_image(
@@ -1217,7 +1323,7 @@ fn extract_bw_image(
     raster: RasterGlyphImage,
     cached: Entry,
     scale: f32,
-) -> Option<(CacheRect, Vec<u32>)> {
+) -> Option<(CacheRect, Vec<u32>, bool)> {
     image.resize(raster.width as usize * raster.height as usize, 0);
 
     match raster.format {
@@ -1271,7 +1377,7 @@ fn extract_bw_image(
         *argb = u32::from_le_bytes([r, g, b, a]);
     }
 
-    Some((*cached, final_image))
+    Some((*cached, final_image, false))
 }
 
 fn from_gray_unpacked<const BITS: usize, const ENTRIES: usize>(
