@@ -339,7 +339,8 @@ fn build_shader(
     encoder.finish(&RenderBundleDescriptor::default())
 }
 
-const LOREM_IPSUM: &str = "
+const LOREM_IPSUM: &str =
+    "
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed nibh lacus, ultrices ac eros eget, \
      bibendum malesuada velit. Pellentesque id leo a sem convallis consectetur. Nulla eget velit \
      pellentesque, dapibus lectus vitae, consequat ex. Maecenas eget accumsan nibh. In at luctus \
@@ -377,5 +378,5 @@ Nunc bibendum pretium gravida. Cras porttitor mi in lacus rutrum, a placerat ero
      Phasellus consequat dui nisi, pretium interdum nisl dignissim a. Sed non nisi luctus, \
      aliquet felis hendrerit, pretium nulla. Morbi eget commodo massa. Fusce nisi nulla, varius \
      sit amet velit vitae, lacinia dapibus lorem. Donec pulvinar dolor eu egestas viverra. Nullam \
-     a tellus bibendum, commodo mi eget, congue lectus.
+     a tellus bibendum, commodo mi eget, congue lectus. 
 ";
