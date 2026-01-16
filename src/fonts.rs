@@ -2,8 +2,8 @@ use std::hash::BuildHasher;
 use std::hash::Hasher;
 use std::hash::RandomState;
 
-use ratatui::buffer::Cell;
-use ratatui::style::Modifier;
+use ratatui_core::buffer::Cell;
+use ratatui_core::style::Modifier;
 use rustybuzz::Face;
 
 /// A Font which can be used for rendering.

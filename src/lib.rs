@@ -129,7 +129,7 @@ pub(crate) mod fonts;
 pub mod shaders;
 pub(crate) mod utils;
 
-pub use ratatui;
+pub use ratatui_core;
 use thiserror::Error;
 pub use wgpu;
 

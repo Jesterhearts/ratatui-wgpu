@@ -1,4 +1,4 @@
-use ratatui::style::Color;
+use ratatui_core::style::Color;
 
 pub(crate) type Rgb = [u8; 3];
 

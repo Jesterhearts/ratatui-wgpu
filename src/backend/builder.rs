@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use std::num::NonZeroU64;
 
 use bitvec::vec::BitVec;
-use ratatui::style::Color;
+use ratatui_core::style::Color;
 use rustybuzz::UnicodeBuffer;
 use web_time::Duration;
 use web_time::Instant;

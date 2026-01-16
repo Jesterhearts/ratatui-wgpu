@@ -4,8 +4,8 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 
 use crossbeam_queue::SegQueue;
-use ratatui::prelude::*;
-use ratatui::widgets::*;
+use ratatui_core::prelude::*;
+use ratatui_core::widgets::*;
 use ratatui_wgpu::Builder;
 use ratatui_wgpu::Dimensions;
 use ratatui_wgpu::Font;
