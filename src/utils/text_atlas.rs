@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 
 use evictor::Lru;
-use ratatui::style::Modifier;
+use ratatui_core::style::Modifier;
 
 use crate::Fonts;
 
@@ -154,7 +154,7 @@ impl Atlas {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::style::Modifier;
+    use ratatui_core::style::Modifier;
 
     use crate::utils::text_atlas::Atlas;
     use crate::utils::text_atlas::Key;
