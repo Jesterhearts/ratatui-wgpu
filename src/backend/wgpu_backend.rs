@@ -647,7 +647,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             .underline_metrics()
                             .map(|m| m.thickness as f32)
                             .unwrap_or(100.0); // observed average
-                        // default underlines are a bit thin for larger font-sizes.
+                                               // default underlines are a bit thin for larger font-sizes.
                         let underline_thickness =
                             (underline_thickness * 1.3 * advance_scale).max(1.0) as u16;
 
@@ -656,7 +656,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             underline_pos_min = underline_position;
                             underline_pos_max = underline_pos_min + underline_thickness;
                         } else {
-                            underline_pos_min = (cached.height as u16).saturating_sub(underline_thickness);
+                            underline_pos_min =
+                                (cached.height as u16).saturating_sub(underline_thickness);
                             underline_pos_max = cached.height as u16;
                         }
                     }
@@ -679,7 +680,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             .strikeout_metrics()
                             .map(|m| m.thickness as f32)
                             .unwrap_or(100.0); // observed average
-                        // default strikeout lines are a bit thin for larger font-sizes.
+                                               // default strikeout lines are a bit thin for larger font-sizes.
                         let strikeout_thickness =
                             (strikeout_thickness * 1.8 * advance_scale).max(1.0) as u16;
 
