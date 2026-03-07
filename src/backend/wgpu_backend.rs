@@ -88,6 +88,8 @@ pub(super) struct RenderInfo {
     cached: CacheRect,
     underline_pos_min: u16,
     underline_pos_max: u16,
+    strikeout_pos_min: u16,
+    strikeout_pos_max: u16,
 }
 /// Map from (x, y, glyph) -> (cell index, cache entry).
 /// We use an IndexMap because we want a consistent rendering order for
@@ -590,7 +592,10 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                     // cluster, and that the remaining characters are all combining characters
                     // which don't need an underline.
                     let set = if advance != 0 {
-                        Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED
+                        Modifier::BOLD
+                            | Modifier::ITALIC
+                            | Modifier::UNDERLINED
+                            | Modifier::CROSSED_OUT
                     } else {
                         Modifier::BOLD | Modifier::ITALIC
                     };
@@ -631,13 +636,55 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                     let mut underline_pos_min = 0;
                     let mut underline_pos_max = 0;
                     if key.style.contains(Modifier::UNDERLINED) {
-                        let underline_position = (metrics.ascender() as f32 * advance_scale) as u16;
+                        let underline_position = metrics.ascender() as f32
+                            - metrics
+                                .underline_metrics()
+                                .map(|m| m.position as f32)
+                                .unwrap_or(0.0);
+                        let underline_position = (underline_position * advance_scale) as u16;
+
                         let underline_thickness = metrics
                             .underline_metrics()
-                            .map(|m| (m.thickness as f32 * advance_scale) as u16)
-                            .unwrap_or(1);
-                        underline_pos_min = underline_position;
-                        underline_pos_max = underline_pos_min + underline_thickness;
+                            .map(|m| m.thickness as f32)
+                            .unwrap_or(100.0); // observed average
+                        // default underlines are a bit thin for larger font-sizes.
+                        let underline_thickness =
+                            (underline_thickness * 1.3 * advance_scale).max(1.0) as u16;
+
+                        // might overflow the box
+                        if underline_position + underline_thickness < cached.height as u16 {
+                            underline_pos_min = underline_position;
+                            underline_pos_max = underline_pos_min + underline_thickness;
+                        } else {
+                            underline_pos_min = (cached.height as u16).saturating_sub(underline_thickness);
+                            underline_pos_max = cached.height as u16;
+                        }
+                    }
+
+                    let mut strikeout_pos_min = 0;
+                    let mut strikeout_pos_max = 0;
+                    if key.style.contains(Modifier::CROSSED_OUT) {
+                        let strikeout_position = metrics
+                            .strikeout_metrics()
+                            .map(|m| m.position)
+                            .unwrap_or_default();
+                        let strikeout_position = if strikeout_position > 0 {
+                            metrics.ascender() as f32 - strikeout_position as f32
+                        } else {
+                            metrics.ascender() as f32 * 0.7f32 // observed average
+                        };
+                        let strikeout_position = (strikeout_position * advance_scale) as u16;
+
+                        let strikeout_thickness = metrics
+                            .strikeout_metrics()
+                            .map(|m| m.thickness as f32)
+                            .unwrap_or(100.0); // observed average
+                        // default strikeout lines are a bit thin for larger font-sizes.
+                        let strikeout_thickness =
+                            (strikeout_thickness * 1.8 * advance_scale).max(1.0) as u16;
+
+                        strikeout_pos_min = strikeout_position;
+                        strikeout_pos_max = strikeout_pos_min + strikeout_thickness;
                     }
 
                     self.rendered[offset].insert(
@@ -647,6 +694,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             cached: *cached,
                             underline_pos_min,
                             underline_pos_max,
+                            strikeout_pos_min,
+                            strikeout_pos_max,
                         },
                     );
                     for x_offset in 0..chars_wide as usize {
@@ -831,6 +880,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                         cached,
                         underline_pos_min,
                         underline_pos_max,
+                        strikeout_pos_min,
+                        strikeout_pos_max,
                     },
                 ) in to_render.iter()
                 {
@@ -859,6 +910,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
 
                     let [r, g, b] = underline_color;
                     let underline_color = u32::from_be_bytes([r, g, b, alpha]);
+                    let strikeout_color = u32::from_be_bytes([r, g, b, alpha]);
 
                     for offset_x in (0..cached.width).step_by(self.fonts.min_width_px() as usize) {
                         self.text_indices.push([
@@ -867,7 +919,7 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             index_offset + 2, // x, y + h
                             index_offset + 2, // x, y + h
                             index_offset + 3, // x + w, y + h
-                            index_offset + 1, // x + w y
+                            index_offset + 1, // x + w, y
                         ]);
                         index_offset += 4;
 
@@ -898,6 +950,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
 
                         let underline_pos = ((*underline_pos_min as u32 + uvy) << 16)
                             | (*underline_pos_max as u32 + uvy);
+                        let strikeout_pos = ((*strikeout_pos_min as u32 + uvy) << 16)
+                            | (*strikeout_pos_max as u32 + uvy);
 
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x, y],
@@ -905,6 +959,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             fg_color,
                             underline_pos,
                             underline_color,
+                            strikeout_pos,
+                            strikeout_color,
                         });
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x + self.fonts.min_width_px() as f32, y],
@@ -912,6 +968,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             fg_color,
                             underline_pos,
                             underline_color,
+                            strikeout_pos,
+                            strikeout_color,
                         });
                         self.text_vertices.push(TextVertexMember {
                             vertex: [x, y + self.fonts.height_px() as f32],
@@ -919,6 +977,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             fg_color,
                             underline_pos,
                             underline_color,
+                            strikeout_pos,
+                            strikeout_color,
                         });
                         self.text_vertices.push(TextVertexMember {
                             vertex: [
@@ -932,6 +992,8 @@ impl<'s, P: PostProcessor, S: RenderSurface<'s>> Backend for WgpuBackend<'_, 's,
                             fg_color,
                             underline_pos,
                             underline_color,
+                            strikeout_pos,
+                            strikeout_color,
                         });
                     }
                 }

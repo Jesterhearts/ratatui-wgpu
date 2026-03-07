@@ -3,6 +3,8 @@ struct VertexOutput {
     @location(1) @interpolate(flat) FgColor: u32,
     @location(2) @interpolate(flat) UnderlinePos: u32,
     @location(3) @interpolate(flat) UnderlineColor: u32,
+    @location(4) @interpolate(flat) StrikeoutPos: u32,
+    @location(5) @interpolate(flat) StrikeoutColor: u32,
     @builtin(position) gl_Position: vec4<f32>,
 }
 
@@ -16,9 +18,11 @@ fn vs_main(
     @location(2) FgColor: u32,
     @location(3) UnderlinePos: u32,
     @location(4) UnderlineColor: u32,
+    @location(5) StrikeoutPos: u32,
+    @location(6) StrikeoutColor: u32,
 ) -> VertexOutput {
     let gl_Position = vec4<f32>((2.0 * VertexCoord / ScreenSize.xy - 1.0) * vec2(1.0, -1.0), 0.0, 1.0);
-    return VertexOutput(UV, FgColor, UnderlinePos, UnderlineColor, gl_Position);
+    return VertexOutput(UV, FgColor, UnderlinePos, UnderlineColor, StrikeoutPos, StrikeoutColor, gl_Position);
 }
 
 struct FragmentOutput {
@@ -51,8 +55,11 @@ fn fs_main(
     @location(1) @interpolate(flat) FgColor: u32,
     @location(2) @interpolate(flat) UnderlinePos: u32,
     @location(3) @interpolate(flat) UnderlineColor: u32,
+    @location(4) @interpolate(flat) StrikeoutPos: u32,
+    @location(5) @interpolate(flat) StrikeoutColor: u32,
 ) -> FragmentOutput {
     let underLineColorUnpacked = unpack_color(UnderlineColor);
+    let strikeOutColorUnpacked = unpack_color(StrikeoutColor);
 
     var fgColorUnpacked = unpack_color(FgColor);
     var textureColor = textureSample(Atlas, Sampler, UV / AtlasSize.xy);
@@ -68,6 +75,10 @@ fn fs_main(
     let yMax = UnderlinePos & 0xFFFFu;
     let yMin = UnderlinePos >> 16u;
     fgColor = select(fgColor, underLineColorUnpacked, u32(UV.y) >= yMin && u32(UV.y) < yMax);
+
+    let y2Max = StrikeoutPos & 0xFFFFu;
+    let y2Min = StrikeoutPos >> 16u;
+    fgColor = select(fgColor, strikeOutColorUnpacked, u32(UV.y) >= y2Min && u32(UV.y) < y2Max);
 
     return FragmentOutput(fgColor);
 }
