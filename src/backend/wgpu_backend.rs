@@ -1186,8 +1186,10 @@ fn rasterize_glyph(
     }
 
     if let Some(raster) = metrics.glyph_raster_image(GlyphId(info.glyph_id as _), u16::MAX) {
-        if let Some(value) = extract_bw_image(&mut image, raster, cached, advance_scale) {
-            return value;
+        if raster.width != 0 && raster.height != 0 {
+            if let Some(value) = extract_bw_image(&mut image, raster, cached, advance_scale) {
+                return value;
+            }
         }
     }
 
