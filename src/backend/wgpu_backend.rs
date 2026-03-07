@@ -1507,7 +1507,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -1575,7 +1575,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -1642,7 +1642,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -1713,7 +1713,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -1788,7 +1788,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -1855,7 +1855,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -1902,7 +1902,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -1969,7 +1969,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -2037,7 +2037,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
@@ -2105,7 +2105,7 @@ mod tests {
                     timeout: None,
                 })
                 .unwrap();
-            recv.recv().unwrap().unwrap();
+            recv.try_recv().unwrap().unwrap();
 
             let data = buffer.get_mapped_range();
             let image =
