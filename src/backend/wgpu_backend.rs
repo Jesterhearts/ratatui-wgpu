@@ -1206,23 +1206,46 @@ fn extract_color_image(
     cached: Entry,
     scale: f32,
 ) -> Option<(CacheRect, Vec<u32>)> {
+    let mut src_width = raster.width as i32;
+    let mut src_height = raster.height as i32;
+
     match raster.format {
         RasterImageFormat::PNG => {
             #[cfg(feature = "png")]
             {
-                let decoder = png::Decoder::new(std::io::Cursor::new(raster.data));
-                if let Ok(mut info) = decoder.read_info() {
-                    image.resize(
-                        info.output_buffer_size().unwrap_or_default() / size_of::<u32>(),
-                        0,
-                    );
-                    if info.next_frame(bytemuck::cast_slice_mut(image)).is_err() {
-                        return None;
-                    }
+                let mut decoder = png::Decoder::new(std::io::Cursor::new(raster.data));
+                decoder.set_transformations(
+                    png::Transformations::ALPHA | png::Transformations::STRIP_16,
+                );
+                if let Ok(mut reader) = decoder.read_info() {
+                    let (color_type, _) = reader.output_color_type();
+                    let info = reader.info();
+                    src_width = info.width as i32;
+                    src_height = info.height as i32;
+                    let pixel_count = src_width as usize * src_height as usize;
 
-                    for rgba in image.iter_mut() {
-                        let [r, g, b, a] = rgba.to_be_bytes();
-                        *rgba = u32::from_be_bytes([a, r, g, b]);
+                    match color_type {
+                        png::ColorType::Rgba => {
+                            image.resize(pixel_count, 0);
+                            if reader.next_frame(bytemuck::cast_slice_mut(image)).is_err() {
+                                return None;
+                            }
+                            for rgba in image.iter_mut() {
+                                let [r, g, b, a] = rgba.to_be_bytes();
+                                *rgba = u32::from_be_bytes([a, r, g, b]);
+                            }
+                        }
+                        png::ColorType::GrayscaleAlpha => {
+                            let mut bytes = vec![0u8; pixel_count * 2];
+                            if reader.next_frame(&mut bytes).is_err() {
+                                return None;
+                            }
+                            image.resize(pixel_count, 0);
+                            for (i, ga) in bytes.chunks_exact(2).enumerate() {
+                                image[i] = u32::from_be_bytes([ga[1], ga[0], ga[0], ga[0]]);
+                            }
+                        }
+                        _ => return None,
                     }
                 } else {
                     return None;
@@ -1257,8 +1280,8 @@ fn extract_color_image(
         raster.x as f32 * scale,
         raster.y as f32 * scale,
         &raqote::Image {
-            width: raster.width as i32,
-            height: raster.height as i32,
+            width: src_width,
+            height: src_height,
             data: &*image,
         },
         &DrawOptions {
