@@ -1,6 +1,6 @@
 [package]
 name         = "ratatui-wgpu"
-version      = "0.5.1"
+version      = "0.6.0"
 edition      = "2021"
 rust-version = "1.92.0"
 description  = "A wgpu based backend for ratatui."
@@ -33,7 +33,7 @@ bitvec             = { version = "1.0.1", default-features = false, features = [
   "std"
 ] }
 bytemuck           = { version = "1.25.0", features = ["derive"] }
-evictor            = { version = "0.5.1", default-features = false }
+evictor            = { version = "0.7.2", default-features = false }
 indexmap           = { version = "2.13.0", default-features = false, features = [
   "std"
 ] }
@@ -48,7 +48,7 @@ unicode-bidi       = "0.3.18"
 unicode-properties = "0.1.4"
 unicode-width      = "0.2.2"
 web-time           = "1.1.0"
-wgpu               = "28.0.0"
+wgpu               = "30.0.0"
 
 [dev-dependencies]
 anyhow                   = "1.0.102"
@@ -57,7 +57,7 @@ console_error_panic_hook = "0.1.7"
 console_log              = "1.0.0"
 crossbeam-queue          = "0.3.12"
 env_logger               = "0.11.9"
-fontdb                   = "0.23.0"
+fontdb                   = "0.24.0"
 futures-lite             = "2.6.1"
 image                    = { version = "0.25.9", default-features = false, features = [
   "png"
@@ -66,7 +66,7 @@ js-sys                   = "0.3.91"
 oneshot                  = "0.2.1"
 palette                  = "0.7.6"
 ratatui                  = "0.30.0"
-serial_test              = "3.4.0"
+serial_test              = "4.0.1"
 wasm-bindgen             = "0.2.114"
 wasm-bindgen-futures     = "0.4.64"
 web-sys                  = { version = "0.3.91", features = [

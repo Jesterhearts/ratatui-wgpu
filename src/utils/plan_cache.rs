@@ -38,7 +38,7 @@ impl PlanCache {
             script: buffer.script(),
         };
 
-        self.lru.get_or_insert_with(key, |_| {
+        let (plan, _) = self.lru.get_or_insert_with(key, |_| {
             ShapePlan::new(
                 font.font(),
                 buffer.direction(),
@@ -46,6 +46,8 @@ impl PlanCache {
                 buffer.language().as_ref(),
                 &[],
             )
-        })
+        });
+
+        plan
     }
 }

@@ -379,7 +379,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         );
 
         self.queue.submit(Some(encoder.finish()));
-        texture.present(Token);
+        texture.present(&self.queue, Token);
     }
 }
 
@@ -1532,7 +1532,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -1600,7 +1600,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -1667,7 +1667,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -1738,7 +1738,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -1813,7 +1813,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -1880,7 +1880,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -1927,7 +1927,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -1994,7 +1994,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -2062,7 +2062,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 
@@ -2130,7 +2130,7 @@ mod tests {
                 .unwrap();
             recv.try_recv().unwrap().unwrap();
 
-            let data = buffer.get_mapped_range();
+            let data = buffer.get_mapped_range().unwrap();
             let image =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(surface.width, surface.height, data).unwrap();
 

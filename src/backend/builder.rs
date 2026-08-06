@@ -364,10 +364,10 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
         target: impl Into<SurfaceTarget<'s>>,
     ) -> Result<WgpuBackend<'a, 's, P>> {
         let instance = self.instance.get_or_insert_with(|| {
-            wgpu::Instance::new(&InstanceDescriptor {
+            wgpu::Instance::new(InstanceDescriptor {
                 backends: Backends::default(),
                 flags: InstanceFlags::default(),
-                ..Default::default()
+                ..InstanceDescriptor::new_without_display_handle()
             })
         });
         let surface = instance
@@ -410,10 +410,10 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
         mut surface: S,
     ) -> Result<WgpuBackend<'a, 's, P, S>> {
         let instance = self.instance.get_or_insert_with(|| {
-            wgpu::Instance::new(&InstanceDescriptor {
+            wgpu::Instance::new(InstanceDescriptor {
                 backends: Backends::default(),
                 flags: InstanceFlags::default(),
-                ..Default::default()
+                ..InstanceDescriptor::new_without_display_handle()
             })
         });
 
@@ -625,7 +625,7 @@ fn build_text_bg_compositor(
 
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("Text Bg Compositor Layout"),
-        bind_group_layouts: &[&vertex_shader_layout],
+        bind_group_layouts: &[Some(&vertex_shader_layout)],
         immediate_size: 0,
     });
 
@@ -636,11 +636,11 @@ fn build_text_bg_compositor(
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: PipelineCompilationOptions::default(),
-            buffers: &[VertexBufferLayout {
+            buffers: &[Some(VertexBufferLayout {
                 array_stride: size_of::<TextBgVertexMember>() as u64,
                 step_mode: VertexStepMode::Vertex,
                 attributes: &vertex_attr_array![0 => Float32x2, 1 => Uint32],
-            }],
+            })],
         },
         primitive: PrimitiveState {
             topology: PrimitiveTopology::TriangleList,
@@ -768,7 +768,7 @@ fn build_text_fg_compositor(
 
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("Text Compositor Layout"),
-        bind_group_layouts: &[&vertex_shader_layout, &fragment_shader_layout],
+        bind_group_layouts: &[Some(&vertex_shader_layout), Some(&fragment_shader_layout)],
         immediate_size: 0,
     });
 
@@ -779,11 +779,11 @@ fn build_text_fg_compositor(
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: PipelineCompilationOptions::default(),
-            buffers: &[VertexBufferLayout {
+            buffers: &[Some(VertexBufferLayout {
                 array_stride: size_of::<TextVertexMember>() as u64,
                 step_mode: VertexStepMode::Vertex,
                 attributes: &vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32, 3 => Uint32, 4 => Uint32, 5 => Uint32, 6 => Uint32],
-            }],
+            })],
         },
         primitive: PrimitiveState {
             topology: PrimitiveTopology::TriangleList,
@@ -814,440 +814,173 @@ fn build_text_fg_compositor(
 
 fn min_limits(
     adapter: &wgpu::Adapter,
-    limits: Limits,
+    wanted: Limits,
 ) -> Limits {
-    let Limits {
-        max_texture_dimension_1d: max_texture_dimension_1d_wl,
-        max_texture_dimension_2d: max_texture_dimension_2d_wl,
-        max_texture_dimension_3d: max_texture_dimension_3d_wl,
-        max_texture_array_layers: max_texture_array_layers_wl,
-        max_bind_groups: max_bind_groups_wl,
-        max_bindings_per_bind_group: max_bindings_per_bind_group_wl,
-        max_dynamic_uniform_buffers_per_pipeline_layout:
-            max_dynamic_uniform_buffers_per_pipeline_layout_wl,
-        max_dynamic_storage_buffers_per_pipeline_layout:
-            max_dynamic_storage_buffers_per_pipeline_layout_wl,
-        max_sampled_textures_per_shader_stage: max_sampled_textures_per_shader_stage_wl,
-        max_samplers_per_shader_stage: max_samplers_per_shader_stage_wl,
-        max_storage_buffers_per_shader_stage: max_storage_buffers_per_shader_stage_wl,
-        max_storage_textures_per_shader_stage: max_storage_textures_per_shader_stage_wl,
-        max_uniform_buffers_per_shader_stage: max_uniform_buffers_per_shader_stage_wl,
-        max_uniform_buffer_binding_size: max_uniform_buffer_binding_size_wl,
-        max_storage_buffer_binding_size: max_storage_buffer_binding_size_wl,
-        max_vertex_buffers: max_vertex_buffers_wl,
-        max_buffer_size: max_buffer_size_wl,
-        max_vertex_attributes: max_vertex_attributes_wl,
-        max_vertex_buffer_array_stride: max_vertex_buffer_array_stride_wl,
-        min_uniform_buffer_offset_alignment: min_uniform_buffer_offset_alignment_wl,
-        min_storage_buffer_offset_alignment: min_storage_buffer_offset_alignment_wl,
-        max_inter_stage_shader_components: max_inter_stage_shader_components_wl,
-        max_color_attachments: max_color_attachments_wl,
-        max_color_attachment_bytes_per_sample: max_color_attachment_bytes_per_sample_wl,
-        max_compute_workgroup_storage_size: max_compute_workgroup_storage_size_wl,
-        max_compute_invocations_per_workgroup: max_compute_invocations_per_workgroup_wl,
-        max_compute_workgroup_size_x: max_compute_workgroup_size_x_wl,
-        max_compute_workgroup_size_y: max_compute_workgroup_size_y_wl,
-        max_compute_workgroup_size_z: max_compute_workgroup_size_z_wl,
-        max_compute_workgroups_per_dimension: max_compute_workgroups_per_dimension_wl,
-        max_non_sampler_bindings: max_non_sampler_bindings_wl,
-        max_binding_array_elements_per_shader_stage: max_binding_array_elements_per_shader_stage_wl,
-        max_binding_array_sampler_elements_per_shader_stage:
-            max_binding_array_sampler_elements_per_shader_stage_wl,
-        max_blas_primitive_count: max_blas_primitive_count_wl,
-        max_blas_geometry_count: max_blas_geometry_count_wl,
-        max_tlas_instance_count: max_tlas_instance_count_wl,
-        max_acceleration_structures_per_shader_stage:
-            max_acceleration_structures_per_shader_stage_wl,
-        max_immediate_size: max_immediate_size_wl,
-        max_task_mesh_workgroup_total_count: max_task_mesh_workgroup_total_count_wl,
-        max_task_mesh_workgroups_per_dimension: max_task_mesh_workgroups_per_dimension_wl,
-        max_task_invocations_per_workgroup: max_task_invocations_per_workgroup_wl,
-        max_task_invocations_per_dimension: max_task_invocations_per_dimension_wl,
-        max_mesh_invocations_per_workgroup: max_mesh_invocations_per_workgroup_wl,
-        max_mesh_invocations_per_dimension: max_mesh_invocations_per_dimension_wl,
-        max_task_payload_size: max_task_payload_size_wl,
-        max_mesh_output_vertices: max_mesh_output_vertices_wl,
-        max_mesh_output_primitives: max_mesh_output_primitives_wl,
-        max_mesh_output_layers: max_mesh_output_layers_wl,
-        max_mesh_multiview_view_count: max_mesh_multiview_view_count_wl,
-        max_multiview_view_count: max_multiview_view_count_wl,
-    } = limits;
-    let Limits {
-        max_texture_dimension_1d: max_texture_dimension_1d_al,
-        max_texture_dimension_2d: max_texture_dimension_2d_al,
-        max_texture_dimension_3d: max_texture_dimension_3d_al,
-        max_texture_array_layers: max_texture_array_layers_al,
-        max_bind_groups: max_bind_groups_al,
-        max_bindings_per_bind_group: max_bindings_per_bind_group_al,
-        max_dynamic_uniform_buffers_per_pipeline_layout:
-            max_dynamic_uniform_buffers_per_pipeline_layout_al,
-        max_dynamic_storage_buffers_per_pipeline_layout:
-            max_dynamic_storage_buffers_per_pipeline_layout_al,
-        max_sampled_textures_per_shader_stage: max_sampled_textures_per_shader_stage_al,
-        max_samplers_per_shader_stage: max_samplers_per_shader_stage_al,
-        max_storage_buffers_per_shader_stage: max_storage_buffers_per_shader_stage_al,
-        max_storage_textures_per_shader_stage: max_storage_textures_per_shader_stage_al,
-        max_uniform_buffers_per_shader_stage: max_uniform_buffers_per_shader_stage_al,
-        max_uniform_buffer_binding_size: max_uniform_buffer_binding_size_al,
-        max_storage_buffer_binding_size: max_storage_buffer_binding_size_al,
-        max_vertex_buffers: max_vertex_buffers_al,
-        max_buffer_size: max_buffer_size_al,
-        max_vertex_attributes: max_vertex_attributes_al,
-        max_vertex_buffer_array_stride: max_vertex_buffer_array_stride_al,
-        min_uniform_buffer_offset_alignment: min_uniform_buffer_offset_alignment_al,
-        min_storage_buffer_offset_alignment: min_storage_buffer_offset_alignment_al,
-        max_inter_stage_shader_components: max_inter_stage_shader_components_al,
-        max_color_attachments: max_color_attachments_al,
-        max_color_attachment_bytes_per_sample: max_color_attachment_bytes_per_sample_al,
-        max_compute_workgroup_storage_size: max_compute_workgroup_storage_size_al,
-        max_compute_invocations_per_workgroup: max_compute_invocations_per_workgroup_al,
-        max_compute_workgroup_size_x: max_compute_workgroup_size_x_al,
-        max_compute_workgroup_size_y: max_compute_workgroup_size_y_al,
-        max_compute_workgroup_size_z: max_compute_workgroup_size_z_al,
-        max_compute_workgroups_per_dimension: max_compute_workgroups_per_dimension_al,
-        max_non_sampler_bindings: max_non_sampler_bindings_al,
-        max_binding_array_elements_per_shader_stage: max_binding_array_elements_per_shader_stage_al,
-        max_binding_array_sampler_elements_per_shader_stage:
-            max_binding_array_sampler_elements_per_shader_stage_al,
-        max_blas_primitive_count: max_blas_primitive_count_al,
-        max_blas_geometry_count: max_blas_geometry_count_al,
-        max_tlas_instance_count: max_tlas_instance_count_al,
-        max_acceleration_structures_per_shader_stage:
-            max_acceleration_structures_per_shader_stage_al,
-        max_immediate_size: max_immediate_size_al,
-        max_task_mesh_workgroup_total_count: max_task_mesh_workgroup_total_count_al,
-        max_task_mesh_workgroups_per_dimension: max_task_mesh_workgroups_per_dimension_al,
-        max_task_invocations_per_workgroup: max_task_invocations_per_workgroup_al,
-        max_task_invocations_per_dimension: max_task_invocations_per_dimension_al,
-        max_mesh_invocations_per_workgroup: max_mesh_invocations_per_workgroup_al,
-        max_mesh_invocations_per_dimension: max_mesh_invocations_per_dimension_al,
-        max_task_payload_size: max_task_payload_size_al,
-        max_mesh_output_vertices: max_mesh_output_vertices_al,
-        max_mesh_output_primitives: max_mesh_output_primitives_al,
-        max_mesh_output_layers: max_mesh_output_layers_al,
-        max_mesh_multiview_view_count: max_mesh_multiview_view_count_al,
-        max_multiview_view_count: max_multiview_view_count_al,
-    } = adapter.limits();
+    let available = adapter.limits();
 
     Limits {
-        max_texture_dimension_1d: if max_texture_dimension_1d_wl <= max_texture_dimension_1d_al {
-            max_texture_dimension_1d_wl
-        } else {
-            max_texture_dimension_1d_al
-        },
-        max_texture_dimension_2d: if max_texture_dimension_2d_wl <= max_texture_dimension_2d_al {
-            max_texture_dimension_2d_wl
-        } else {
-            max_texture_dimension_2d_al
-        },
-        max_texture_dimension_3d: if max_texture_dimension_3d_wl <= max_texture_dimension_3d_al {
-            max_texture_dimension_3d_wl
-        } else {
-            max_texture_dimension_3d_al
-        },
-        max_texture_array_layers: if max_texture_array_layers_wl <= max_texture_array_layers_al {
-            max_texture_array_layers_wl
-        } else {
-            max_texture_array_layers_al
-        },
-        max_bind_groups: if max_bind_groups_wl <= max_bind_groups_al {
-            max_bind_groups_wl
-        } else {
-            max_bind_groups_al
-        },
-        max_bindings_per_bind_group: if max_bindings_per_bind_group_wl
-            <= max_bindings_per_bind_group_al
-        {
-            max_bindings_per_bind_group_wl
-        } else {
-            max_bindings_per_bind_group_al
-        },
-        max_dynamic_uniform_buffers_per_pipeline_layout:
-            if max_dynamic_uniform_buffers_per_pipeline_layout_wl
-                <= max_dynamic_uniform_buffers_per_pipeline_layout_al
-            {
-                max_dynamic_uniform_buffers_per_pipeline_layout_wl
-            } else {
-                max_dynamic_uniform_buffers_per_pipeline_layout_al
-            },
-        max_dynamic_storage_buffers_per_pipeline_layout:
-            if max_dynamic_storage_buffers_per_pipeline_layout_wl
-                <= max_dynamic_storage_buffers_per_pipeline_layout_al
-            {
-                max_dynamic_storage_buffers_per_pipeline_layout_wl
-            } else {
-                max_dynamic_storage_buffers_per_pipeline_layout_al
-            },
-        max_sampled_textures_per_shader_stage: if max_sampled_textures_per_shader_stage_wl
-            <= max_sampled_textures_per_shader_stage_al
-        {
-            max_sampled_textures_per_shader_stage_wl
-        } else {
-            max_sampled_textures_per_shader_stage_al
-        },
-        max_samplers_per_shader_stage: if max_samplers_per_shader_stage_wl
-            <= max_samplers_per_shader_stage_al
-        {
-            max_samplers_per_shader_stage_wl
-        } else {
-            max_samplers_per_shader_stage_al
-        },
-        max_storage_buffers_per_shader_stage: if max_storage_buffers_per_shader_stage_wl
-            <= max_storage_buffers_per_shader_stage_al
-        {
-            max_storage_buffers_per_shader_stage_wl
-        } else {
-            max_storage_buffers_per_shader_stage_al
-        },
-        max_storage_textures_per_shader_stage: if max_storage_textures_per_shader_stage_wl
-            <= max_storage_textures_per_shader_stage_al
-        {
-            max_storage_textures_per_shader_stage_wl
-        } else {
-            max_storage_textures_per_shader_stage_al
-        },
-        max_uniform_buffers_per_shader_stage: if max_uniform_buffers_per_shader_stage_wl
-            <= max_uniform_buffers_per_shader_stage_al
-        {
-            max_uniform_buffers_per_shader_stage_wl
-        } else {
-            max_uniform_buffers_per_shader_stage_al
-        },
-        max_uniform_buffer_binding_size: if max_uniform_buffer_binding_size_wl
-            <= max_uniform_buffer_binding_size_al
-        {
-            max_uniform_buffer_binding_size_wl
-        } else {
-            max_uniform_buffer_binding_size_al
-        },
-        max_storage_buffer_binding_size: if max_storage_buffer_binding_size_wl
-            <= max_storage_buffer_binding_size_al
-        {
-            max_storage_buffer_binding_size_wl
-        } else {
-            max_storage_buffer_binding_size_al
-        },
-        max_vertex_buffers: if max_vertex_buffers_wl <= max_vertex_buffers_al {
-            max_vertex_buffers_wl
-        } else {
-            max_vertex_buffers_al
-        },
-        max_buffer_size: if max_buffer_size_wl <= max_buffer_size_al {
-            max_buffer_size_wl
-        } else {
-            max_buffer_size_al
-        },
-        max_vertex_attributes: if max_vertex_attributes_wl <= max_vertex_attributes_al {
-            max_vertex_attributes_wl
-        } else {
-            max_vertex_attributes_al
-        },
-        max_vertex_buffer_array_stride: if max_vertex_buffer_array_stride_wl
-            <= max_vertex_buffer_array_stride_al
-        {
-            max_vertex_buffer_array_stride_wl
-        } else {
-            max_vertex_buffer_array_stride_al
-        },
-        min_uniform_buffer_offset_alignment: if min_uniform_buffer_offset_alignment_wl
-            <= min_uniform_buffer_offset_alignment_al
-        {
-            min_uniform_buffer_offset_alignment_wl
-        } else {
-            min_uniform_buffer_offset_alignment_al
-        },
-        min_storage_buffer_offset_alignment: if min_storage_buffer_offset_alignment_wl
-            <= min_storage_buffer_offset_alignment_al
-        {
-            min_storage_buffer_offset_alignment_wl
-        } else {
-            min_storage_buffer_offset_alignment_al
-        },
-        max_inter_stage_shader_components: if max_inter_stage_shader_components_wl
-            <= max_inter_stage_shader_components_al
-        {
-            max_inter_stage_shader_components_wl
-        } else {
-            max_inter_stage_shader_components_al
-        },
-        max_color_attachments: if max_color_attachments_wl <= max_color_attachments_al {
-            max_color_attachments_wl
-        } else {
-            max_color_attachments_al
-        },
-        max_color_attachment_bytes_per_sample: if max_color_attachment_bytes_per_sample_wl
-            <= max_color_attachment_bytes_per_sample_al
-        {
-            max_color_attachment_bytes_per_sample_wl
-        } else {
-            max_color_attachment_bytes_per_sample_al
-        },
-        max_compute_workgroup_storage_size: if max_compute_workgroup_storage_size_wl
-            <= max_compute_workgroup_storage_size_al
-        {
-            max_compute_workgroup_storage_size_wl
-        } else {
-            max_compute_workgroup_storage_size_al
-        },
-        max_compute_invocations_per_workgroup: if max_compute_invocations_per_workgroup_wl
-            <= max_compute_invocations_per_workgroup_al
-        {
-            max_compute_invocations_per_workgroup_wl
-        } else {
-            max_compute_invocations_per_workgroup_al
-        },
-        max_compute_workgroup_size_x: if max_compute_workgroup_size_x_wl
-            <= max_compute_workgroup_size_x_al
-        {
-            max_compute_workgroup_size_x_wl
-        } else {
-            max_compute_workgroup_size_x_al
-        },
-        max_compute_workgroup_size_y: if max_compute_workgroup_size_y_wl
-            <= max_compute_workgroup_size_y_al
-        {
-            max_compute_workgroup_size_y_wl
-        } else {
-            max_compute_workgroup_size_y_al
-        },
-        max_compute_workgroup_size_z: if max_compute_workgroup_size_z_wl
-            <= max_compute_workgroup_size_z_al
-        {
-            max_compute_workgroup_size_z_wl
-        } else {
-            max_compute_workgroup_size_z_al
-        },
-        max_compute_workgroups_per_dimension: if max_compute_workgroups_per_dimension_wl
-            <= max_compute_workgroups_per_dimension_al
-        {
-            max_compute_workgroups_per_dimension_wl
-        } else {
-            max_compute_workgroups_per_dimension_al
-        },
-        max_non_sampler_bindings: if max_non_sampler_bindings_wl <= max_non_sampler_bindings_al {
-            max_non_sampler_bindings_wl
-        } else {
-            max_non_sampler_bindings_al
-        },
-        max_binding_array_elements_per_shader_stage:
-            if max_binding_array_elements_per_shader_stage_wl
-                <= max_binding_array_elements_per_shader_stage_al
-            {
-                max_binding_array_elements_per_shader_stage_wl
-            } else {
-                max_binding_array_elements_per_shader_stage_al
-            },
-        max_binding_array_sampler_elements_per_shader_stage:
-            if max_binding_array_sampler_elements_per_shader_stage_wl
-                <= max_binding_array_sampler_elements_per_shader_stage_al
-            {
-                max_binding_array_sampler_elements_per_shader_stage_wl
-            } else {
-                max_binding_array_sampler_elements_per_shader_stage_al
-            },
-        max_blas_primitive_count: if max_blas_primitive_count_wl <= max_blas_primitive_count_al {
-            max_blas_primitive_count_wl
-        } else {
-            max_blas_primitive_count_al
-        },
-        max_blas_geometry_count: if max_blas_geometry_count_wl <= max_blas_geometry_count_al {
-            max_blas_geometry_count_wl
-        } else {
-            max_blas_geometry_count_al
-        },
-        max_tlas_instance_count: if max_tlas_instance_count_wl <= max_tlas_instance_count_al {
-            max_tlas_instance_count_wl
-        } else {
-            max_tlas_instance_count_al
-        },
-        max_acceleration_structures_per_shader_stage:
-            if max_acceleration_structures_per_shader_stage_wl
-                <= max_acceleration_structures_per_shader_stage_al
-            {
-                max_acceleration_structures_per_shader_stage_wl
-            } else {
-                max_acceleration_structures_per_shader_stage_al
-            },
-        max_immediate_size: if max_immediate_size_wl <= max_immediate_size_al {
-            max_immediate_size_wl
-        } else {
-            max_immediate_size_al
-        },
-        max_task_mesh_workgroup_total_count: if max_task_mesh_workgroup_total_count_wl
-            <= max_task_mesh_workgroup_total_count_al
-        {
-            max_task_mesh_workgroup_total_count_wl
-        } else {
-            max_task_mesh_workgroup_total_count_al
-        },
-        max_task_mesh_workgroups_per_dimension: if max_task_mesh_workgroups_per_dimension_wl
-            <= max_task_mesh_workgroups_per_dimension_al
-        {
-            max_task_mesh_workgroups_per_dimension_wl
-        } else {
-            max_task_mesh_workgroups_per_dimension_al
-        },
-        max_task_invocations_per_workgroup: if max_task_invocations_per_workgroup_wl
-            <= max_task_invocations_per_workgroup_al
-        {
-            max_task_invocations_per_workgroup_wl
-        } else {
-            max_task_invocations_per_workgroup_al
-        },
-        max_task_invocations_per_dimension: if max_task_invocations_per_dimension_wl
-            <= max_task_invocations_per_dimension_al
-        {
-            max_task_invocations_per_dimension_wl
-        } else {
-            max_task_invocations_per_dimension_al
-        },
-        max_mesh_invocations_per_workgroup: if max_mesh_invocations_per_workgroup_wl
-            <= max_mesh_invocations_per_workgroup_al
-        {
-            max_mesh_invocations_per_workgroup_wl
-        } else {
-            max_mesh_invocations_per_workgroup_al
-        },
-        max_mesh_invocations_per_dimension: if max_mesh_invocations_per_dimension_wl
-            <= max_mesh_invocations_per_dimension_al
-        {
-            max_mesh_invocations_per_dimension_wl
-        } else {
-            max_mesh_invocations_per_dimension_al
-        },
-        max_task_payload_size: if max_task_payload_size_wl <= max_task_payload_size_al {
-            max_task_payload_size_wl
-        } else {
-            max_task_payload_size_al
-        },
-        max_mesh_output_vertices: if max_mesh_output_vertices_wl <= max_mesh_output_vertices_al {
-            max_mesh_output_vertices_wl
-        } else {
-            max_mesh_output_vertices_al
-        },
-        max_mesh_output_primitives: if max_mesh_output_primitives_wl
-            <= max_mesh_output_primitives_al
-        {
-            max_mesh_output_primitives_wl
-        } else {
-            max_mesh_output_primitives_al
-        },
-        max_mesh_output_layers: if max_mesh_output_layers_wl <= max_mesh_output_layers_al {
-            max_mesh_output_layers_wl
-        } else {
-            max_mesh_output_layers_al
-        },
-        max_mesh_multiview_view_count: if max_mesh_multiview_view_count_wl
-            <= max_mesh_multiview_view_count_al
-        {
-            max_mesh_multiview_view_count_wl
-        } else {
-            max_mesh_multiview_view_count_al
-        },
-        max_multiview_view_count: if max_multiview_view_count_wl <= max_multiview_view_count_al {
-            max_multiview_view_count_wl
-        } else {
-            max_multiview_view_count_al
-        },
+        max_texture_dimension_1d: wanted
+            .max_texture_dimension_1d
+            .min(available.max_texture_dimension_1d),
+        max_texture_dimension_2d: wanted
+            .max_texture_dimension_2d
+            .min(available.max_texture_dimension_2d),
+        max_texture_dimension_3d: wanted
+            .max_texture_dimension_3d
+            .min(available.max_texture_dimension_3d),
+        max_texture_array_layers: wanted
+            .max_texture_array_layers
+            .min(available.max_texture_array_layers),
+        max_bind_groups: wanted.max_bind_groups.min(available.max_bind_groups),
+        max_bind_groups_plus_vertex_buffers: wanted
+            .max_bind_groups_plus_vertex_buffers
+            .min(available.max_bind_groups_plus_vertex_buffers),
+        max_bindings_per_bind_group: wanted
+            .max_bindings_per_bind_group
+            .min(available.max_bindings_per_bind_group),
+        max_dynamic_uniform_buffers_per_pipeline_layout: wanted
+            .max_dynamic_uniform_buffers_per_pipeline_layout
+            .min(available.max_dynamic_uniform_buffers_per_pipeline_layout),
+        max_dynamic_storage_buffers_per_pipeline_layout: wanted
+            .max_dynamic_storage_buffers_per_pipeline_layout
+            .min(available.max_dynamic_storage_buffers_per_pipeline_layout),
+        max_sampled_textures_per_shader_stage: wanted
+            .max_sampled_textures_per_shader_stage
+            .min(available.max_sampled_textures_per_shader_stage),
+        max_samplers_per_shader_stage: wanted
+            .max_samplers_per_shader_stage
+            .min(available.max_samplers_per_shader_stage),
+        max_storage_buffers_per_shader_stage: wanted
+            .max_storage_buffers_per_shader_stage
+            .min(available.max_storage_buffers_per_shader_stage),
+        max_storage_textures_per_shader_stage: wanted
+            .max_storage_textures_per_shader_stage
+            .min(available.max_storage_textures_per_shader_stage),
+        max_uniform_buffers_per_shader_stage: wanted
+            .max_uniform_buffers_per_shader_stage
+            .min(available.max_uniform_buffers_per_shader_stage),
+        max_binding_array_elements_per_shader_stage: wanted
+            .max_binding_array_elements_per_shader_stage
+            .min(available.max_binding_array_elements_per_shader_stage),
+        max_binding_array_acceleration_structure_elements_per_shader_stage: wanted
+            .max_binding_array_acceleration_structure_elements_per_shader_stage
+            .min(available.max_binding_array_acceleration_structure_elements_per_shader_stage),
+        max_binding_array_sampler_elements_per_shader_stage: wanted
+            .max_binding_array_sampler_elements_per_shader_stage
+            .min(available.max_binding_array_sampler_elements_per_shader_stage),
+        max_uniform_buffer_binding_size: wanted
+            .max_uniform_buffer_binding_size
+            .min(available.max_uniform_buffer_binding_size),
+        max_storage_buffer_binding_size: wanted
+            .max_storage_buffer_binding_size
+            .min(available.max_storage_buffer_binding_size),
+        max_vertex_buffers: wanted.max_vertex_buffers.min(available.max_vertex_buffers),
+        max_buffer_size: wanted.max_buffer_size.min(available.max_buffer_size),
+        max_vertex_attributes: wanted
+            .max_vertex_attributes
+            .min(available.max_vertex_attributes),
+        max_vertex_buffer_array_stride: wanted
+            .max_vertex_buffer_array_stride
+            .min(available.max_vertex_buffer_array_stride),
+        max_inter_stage_shader_variables: wanted
+            .max_inter_stage_shader_variables
+            .min(available.max_inter_stage_shader_variables),
+        min_uniform_buffer_offset_alignment: wanted
+            .min_uniform_buffer_offset_alignment
+            .min(available.min_uniform_buffer_offset_alignment),
+        min_storage_buffer_offset_alignment: wanted
+            .min_storage_buffer_offset_alignment
+            .min(available.min_storage_buffer_offset_alignment),
+        max_color_attachments: wanted
+            .max_color_attachments
+            .min(available.max_color_attachments),
+        max_color_attachment_bytes_per_sample: wanted
+            .max_color_attachment_bytes_per_sample
+            .min(available.max_color_attachment_bytes_per_sample),
+        max_compute_workgroup_storage_size: wanted
+            .max_compute_workgroup_storage_size
+            .min(available.max_compute_workgroup_storage_size),
+        max_compute_invocations_per_workgroup: wanted
+            .max_compute_invocations_per_workgroup
+            .min(available.max_compute_invocations_per_workgroup),
+        max_compute_workgroup_size_x: wanted
+            .max_compute_workgroup_size_x
+            .min(available.max_compute_workgroup_size_x),
+        max_compute_workgroup_size_y: wanted
+            .max_compute_workgroup_size_y
+            .min(available.max_compute_workgroup_size_y),
+        max_compute_workgroup_size_z: wanted
+            .max_compute_workgroup_size_z
+            .min(available.max_compute_workgroup_size_z),
+        max_compute_workgroups_per_dimension: wanted
+            .max_compute_workgroups_per_dimension
+            .min(available.max_compute_workgroups_per_dimension),
+        max_immediate_size: wanted.max_immediate_size.min(available.max_immediate_size),
+        max_non_sampler_bindings: wanted
+            .max_non_sampler_bindings
+            .min(available.max_non_sampler_bindings),
+        max_task_workgroup_total_count: wanted
+            .max_task_workgroup_total_count
+            .min(available.max_task_workgroup_total_count),
+        max_task_workgroups_per_dimension: wanted
+            .max_task_workgroups_per_dimension
+            .min(available.max_task_workgroups_per_dimension),
+        max_mesh_workgroup_total_count: wanted
+            .max_mesh_workgroup_total_count
+            .min(available.max_mesh_workgroup_total_count),
+        max_mesh_workgroups_per_dimension: wanted
+            .max_mesh_workgroups_per_dimension
+            .min(available.max_mesh_workgroups_per_dimension),
+        max_task_invocations_per_workgroup: wanted
+            .max_task_invocations_per_workgroup
+            .min(available.max_task_invocations_per_workgroup),
+        max_task_invocations_per_dimension: wanted
+            .max_task_invocations_per_dimension
+            .min(available.max_task_invocations_per_dimension),
+        max_mesh_invocations_per_workgroup: wanted
+            .max_mesh_invocations_per_workgroup
+            .min(available.max_mesh_invocations_per_workgroup),
+        max_mesh_invocations_per_dimension: wanted
+            .max_mesh_invocations_per_dimension
+            .min(available.max_mesh_invocations_per_dimension),
+        max_task_payload_size: wanted
+            .max_task_payload_size
+            .min(available.max_task_payload_size),
+        max_mesh_output_vertices: wanted
+            .max_mesh_output_vertices
+            .min(available.max_mesh_output_vertices),
+        max_mesh_output_primitives: wanted
+            .max_mesh_output_primitives
+            .min(available.max_mesh_output_primitives),
+        max_mesh_output_layers: wanted
+            .max_mesh_output_layers
+            .min(available.max_mesh_output_layers),
+        max_mesh_multiview_view_count: wanted
+            .max_mesh_multiview_view_count
+            .min(available.max_mesh_multiview_view_count),
+        max_blas_primitive_count: wanted
+            .max_blas_primitive_count
+            .min(available.max_blas_primitive_count),
+        max_blas_geometry_count: wanted
+            .max_blas_geometry_count
+            .min(available.max_blas_geometry_count),
+        max_tlas_instance_count: wanted
+            .max_tlas_instance_count
+            .min(available.max_tlas_instance_count),
+        max_acceleration_structures_per_shader_stage: wanted
+            .max_acceleration_structures_per_shader_stage
+            .min(available.max_acceleration_structures_per_shader_stage),
+        max_buffers_and_acceleration_structures_per_shader_stage: wanted
+            .max_buffers_and_acceleration_structures_per_shader_stage
+            .min(available.max_buffers_and_acceleration_structures_per_shader_stage),
+        max_multiview_view_count: wanted
+            .max_multiview_view_count
+            .min(available.max_multiview_view_count),
+        max_ray_dispatch_count: wanted
+            .max_ray_dispatch_count
+            .min(available.max_ray_dispatch_count),
+        max_ray_recursion_depth: wanted
+            .max_ray_recursion_depth
+            .min(available.max_ray_recursion_depth),
     }
 }

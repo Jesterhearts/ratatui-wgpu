@@ -12,11 +12,14 @@ use wgpu::BufferDescriptor;
 #[cfg(test)]
 use wgpu::BufferUsages;
 use wgpu::CommandEncoder;
+use wgpu::CurrentSurfaceTexture;
 use wgpu::Device;
 use wgpu::Extent3d;
 use wgpu::Queue;
 use wgpu::RenderPipeline;
 use wgpu::Surface;
+#[cfg(test)]
+use wgpu::SurfaceColorSpace;
 use wgpu::SurfaceConfiguration;
 use wgpu::SurfaceTexture;
 #[cfg(test)]
@@ -141,6 +144,7 @@ pub trait RenderTexture: private::Sealed + Sized {
     /// Presents the rendered result if applicable.
     fn present(
         self,
+        _queue: &Queue,
         _token: private::Token,
     ) {
     }
@@ -156,9 +160,10 @@ impl RenderTexture for RenderTarget {
 
     fn present(
         self,
+        queue: &Queue,
         _token: private::Token,
     ) {
-        self.texture.present();
+        queue.present(self.texture);
     }
 }
 
@@ -241,9 +246,11 @@ impl<'s> RenderSurface<'s> for Surface<'s> {
         _token: private::Token,
     ) -> Option<Self::Target> {
         let output = match self.get_current_texture() {
-            Ok(output) => output,
-            Err(err) => {
-                error!("{err}");
+            CurrentSurfaceTexture::Success(output) | CurrentSurfaceTexture::Suboptimal(output) => {
+                output
+            }
+            unavailable => {
+                error!("Failed to acquire surface texture: {unavailable:?}");
                 return None;
             }
         };
@@ -319,6 +326,7 @@ impl RenderSurface<'static> for HeadlessSurface {
         Some(SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
             format: self.format,
+            color_space: SurfaceColorSpace::Auto,
             width,
             height,
             present_mode: wgpu::PresentMode::Immediate,
