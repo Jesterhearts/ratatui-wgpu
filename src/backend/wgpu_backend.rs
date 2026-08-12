@@ -277,13 +277,49 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
 
     /// Update the fonts used for rendering. This will cause a full repaint of
     /// the screen the next time [`WgpuBackend::flush`] is called.
+    ///
+    /// When the new font metrics change the cell dimensions, internal GPU state
+    /// (text texture, cell buffers, glyph positions) is rebuilt so that the
+    /// next frame renders cleanly with the new font.
     pub fn update_fonts(
         &mut self,
         new_fonts: Fonts<'f>,
     ) {
-        self.dirty_rows.clear();
+        let (inset_width, inset_height) = match self.viewport {
+            Viewport::Full => (0, 0),
+            Viewport::Shrink { width, height } => (width, height),
+        };
+
+        let old_dims = self.size().unwrap();
         self.cached.match_fonts(&new_fonts);
         self.fonts = new_fonts;
+
+        let width = self.surface_config.width - inset_width;
+        let height = self.surface_config.height - inset_height;
+        let chars_wide = width / self.fonts.min_width_px();
+        let chars_high = height / self.fonts.height_px();
+
+        if chars_wide != old_dims.width as u32 || chars_high != old_dims.height as u32 {
+            self.cells.clear();
+            self.rendered.clear();
+            self.sourced.clear();
+            self.fast_blinking.clear();
+            self.slow_blinking.clear();
+
+            self.wgpu_state = build_wgpu_state(
+                &self.device,
+                chars_wide * self.fonts.min_width_px(),
+                chars_high * self.fonts.height_px(),
+            );
+
+            self.post_process.resize(
+                &self.device,
+                &self.wgpu_state.text_dest_view,
+                &self.surface_config,
+            );
+        }
+
+        self.dirty_rows.clear();
     }
 
     fn render(&mut self) {
@@ -1429,6 +1465,7 @@ mod tests {
     use image::GenericImageView;
     use image::ImageBuffer;
     use image::Rgba;
+    use ratatui_core::backend::Backend;
     use ratatui_core::style::Color;
     use ratatui_core::style::Stylize;
     use ratatui_core::terminal::Terminal;
@@ -1455,6 +1492,7 @@ mod tests {
     use crate::Builder;
     use crate::Dimensions;
     use crate::Font;
+    use crate::Fonts;
 
     fn tex2buffer(
         device: &Device,
@@ -2534,6 +2572,154 @@ mod tests {
                     [255, 255, 255, LUT_4[0b1100],],
                 ],
             ])
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn update_fonts_rebuilds_state_on_size_change() {
+        let font_data = include_bytes!("fonts/CascadiaMono-Regular.ttf");
+        let font = Font::new(font_data).expect("Invalid font file");
+
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(font.clone())
+                    .with_font_size_px(30)
+                    .with_width_and_height(Dimensions {
+                        width: NonZeroU32::new(512).unwrap(),
+                        height: NonZeroU32::new(256).unwrap(),
+                    })
+                    .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        // Render a frame at the initial font size.
+        terminal
+            .draw(|f| {
+                f.render_widget(Paragraph::new("Hello World"), f.area());
+            })
+            .unwrap();
+
+        let size_before = terminal.backend().size().unwrap();
+
+        // Switch to a smaller font — cell dimensions must change.
+        let new_fonts = Fonts::new(font.clone(), 14);
+        terminal.backend_mut().update_fonts(new_fonts);
+
+        let size_after = terminal.backend().size().unwrap();
+        assert_ne!(
+            size_before, size_after,
+            "Smaller font should produce more cells"
+        );
+        assert!(
+            size_after.width > size_before.width && size_after.height > size_before.height,
+            "Cell count should increase with smaller font"
+        );
+
+        // The backend's internal buffers must have been cleared so that
+        // flush() can rebuild them at the new dimensions.
+        assert!(
+            terminal.backend().cells.is_empty(),
+            "cells should be cleared after font size change"
+        );
+        assert!(
+            terminal.backend().rendered.is_empty(),
+            "rendered should be cleared after font size change"
+        );
+        assert!(
+            terminal.backend().sourced.is_empty(),
+            "sourced should be cleared after font size change"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn update_fonts_renders_after_size_change() {
+        let font_data = include_bytes!("fonts/CascadiaMono-Regular.ttf");
+        let font = Font::new(font_data).expect("Invalid font file");
+
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(font.clone())
+                    .with_font_size_px(30)
+                    .with_width_and_height(Dimensions {
+                        width: NonZeroU32::new(512).unwrap(),
+                        height: NonZeroU32::new(256).unwrap(),
+                    })
+                    .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        // Render at initial size.
+        terminal
+            .draw(|f| {
+                f.render_widget(Paragraph::new("Before"), f.area());
+            })
+            .unwrap();
+
+        // Switch font size and re-render — must not panic.
+        let new_fonts = Fonts::new(font.clone(), 14);
+        terminal.backend_mut().update_fonts(new_fonts);
+        let size = terminal.backend().size().unwrap();
+        terminal
+            .resize(ratatui_core::layout::Rect::new(0, 0, size.width, size.height))
+            .unwrap();
+        terminal
+            .draw(|f| {
+                f.render_widget(Paragraph::new("After font change"), f.area());
+            })
+            .unwrap();
+
+        // Verify the text was written to the backend's cell buffer.
+        let text = terminal.backend().get_text();
+        assert!(
+            text.contains("After font change"),
+            "Rendered text should appear in backend cells after font switch"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn update_fonts_no_rebuild_when_size_unchanged() {
+        let font_data = include_bytes!("fonts/CascadiaMono-Regular.ttf");
+        let font = Font::new(font_data).expect("Invalid font file");
+
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(font.clone())
+                    .with_font_size_px(20)
+                    .with_width_and_height(Dimensions {
+                        width: NonZeroU32::new(512).unwrap(),
+                        height: NonZeroU32::new(256).unwrap(),
+                    })
+                    .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        // Render a frame to populate cells.
+        terminal
+            .draw(|f| {
+                f.render_widget(Paragraph::new("Content"), f.area());
+            })
+            .unwrap();
+
+        let cells_len = terminal.backend().cells.len();
+        assert!(cells_len > 0, "cells should be populated after draw");
+
+        // Update fonts with same size — cells should NOT be cleared.
+        let same_fonts = Fonts::new(font.clone(), 20);
+        terminal.backend_mut().update_fonts(same_fonts);
+
+        assert_eq!(
+            terminal.backend().cells.len(),
+            cells_len,
+            "cells should not be cleared when font size is unchanged"
         );
     }
 }
