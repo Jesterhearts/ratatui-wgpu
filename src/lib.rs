@@ -165,6 +165,8 @@ type RandomState = std::hash::RandomState;
 pub use backend::builder::Builder;
 pub use backend::wgpu_backend::WgpuBackend;
 pub use backend::Dimensions;
+pub use backend::HeadlessSurface;
+pub use backend::HeadlessTarget;
 pub use backend::PostProcessor;
 pub use backend::RenderSurface;
 pub use backend::RenderTexture;

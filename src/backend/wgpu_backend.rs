@@ -168,6 +168,15 @@ pub struct WgpuBackend<
 }
 
 impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
+    /// Block until the GPU has finished all work submitted so far, e.g. to
+    /// time a frame after [`Backend::flush`](ratatui_core::backend::Backend::flush).
+    pub fn wait_for_gpu(&self) {
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+    }
+
     /// Get the [`PostProcessor`] associated with this backend.
     pub fn post_processor(&self) -> &P {
         &self.post_process

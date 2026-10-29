@@ -5,11 +5,8 @@ use std::num::NonZeroU32;
 
 use wgpu::Adapter;
 use wgpu::BindGroup;
-#[cfg(test)]
 use wgpu::Buffer;
-#[cfg(test)]
 use wgpu::BufferDescriptor;
-#[cfg(test)]
 use wgpu::BufferUsages;
 use wgpu::CommandEncoder;
 use wgpu::CurrentSurfaceTexture;
@@ -18,11 +15,9 @@ use wgpu::Extent3d;
 use wgpu::Queue;
 use wgpu::RenderPipeline;
 use wgpu::Surface;
-#[cfg(test)]
 use wgpu::SurfaceColorSpace;
 use wgpu::SurfaceConfiguration;
 use wgpu::SurfaceTexture;
-#[cfg(test)]
 use wgpu::Texture;
 use wgpu::TextureDescriptor;
 use wgpu::TextureDimension;
@@ -114,9 +109,7 @@ pub enum Viewport {
 mod private {
     use wgpu::Surface;
 
-    #[cfg(test)]
     use crate::backend::HeadlessSurface;
-    #[cfg(test)]
     use crate::backend::HeadlessTarget;
     use crate::backend::RenderTarget;
 
@@ -127,10 +120,8 @@ mod private {
     impl Sealed for Surface<'_> {}
     impl Sealed for RenderTarget {}
 
-    #[cfg(test)]
     impl Sealed for HeadlessTarget {}
 
-    #[cfg(test)]
     impl Sealed for HeadlessSurface {}
 }
 
@@ -167,7 +158,6 @@ impl RenderTexture for RenderTarget {
     }
 }
 
-#[cfg(test)]
 impl RenderTexture for HeadlessTarget {
     fn get_view(
         &self,
@@ -266,13 +256,15 @@ impl<'s> RenderSurface<'s> for Surface<'s> {
     }
 }
 
-#[cfg(test)]
-pub(crate) struct HeadlessTarget {
+/// The render target of a [`HeadlessSurface`].
+pub struct HeadlessTarget {
     view: TextureView,
 }
 
-#[cfg(test)]
-pub(crate) struct HeadlessSurface {
+/// A surface that renders into a texture instead of a window, for offscreen
+/// rendering: tests, benchmarks and screenshots. Build a backend with it using
+/// [`Builder::build_headless`](crate::Builder::build_headless).
+pub struct HeadlessSurface {
     pub(crate) texture: Option<Texture>,
     pub(crate) buffer: Option<Buffer>,
     pub(crate) buffer_width: u32,
@@ -281,7 +273,6 @@ pub(crate) struct HeadlessSurface {
     pub(crate) format: TextureFormat,
 }
 
-#[cfg(test)]
 impl HeadlessSurface {
     fn new(format: TextureFormat) -> Self {
         Self {
@@ -291,7 +282,6 @@ impl HeadlessSurface {
     }
 }
 
-#[cfg(test)]
 impl Default for HeadlessSurface {
     fn default() -> Self {
         Self {
@@ -305,7 +295,6 @@ impl Default for HeadlessSurface {
     }
 }
 
-#[cfg(test)]
 impl RenderSurface<'static> for HeadlessSurface {
     type Target = HeadlessTarget;
 
