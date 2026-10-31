@@ -388,16 +388,18 @@ impl<'a, P: PostProcessor> Builder<'a, P> {
         self.build_with_render_surface(surface).await
     }
 
-    #[cfg(test)]
-    pub(crate) async fn build_headless(
+    /// Build a new backend that renders offscreen into a texture, with no
+    /// window. Useful for tests and benchmarks.
+    pub async fn build_headless(
         self
     ) -> Result<WgpuBackend<'a, 'static, P, super::HeadlessSurface>> {
         self.build_with_render_surface(super::HeadlessSurface::default())
             .await
     }
 
-    #[cfg(test)]
-    pub(crate) async fn build_headless_with_format(
+    /// Like [`Builder::build_headless`], rendering into a texture of the
+    /// given format.
+    pub async fn build_headless_with_format(
         self,
         format: TextureFormat,
     ) -> Result<WgpuBackend<'a, 'static, P, super::HeadlessSurface>> {

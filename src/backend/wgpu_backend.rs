@@ -168,6 +168,15 @@ pub struct WgpuBackend<
 }
 
 impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
+    /// Block until the GPU has finished all work submitted so far, e.g. to
+    /// time a frame after [`Backend::flush`](ratatui_core::backend::Backend::flush).
+    pub fn wait_for_gpu(&self) {
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+    }
+
     /// Get the [`PostProcessor`] associated with this backend.
     pub fn post_processor(&self) -> &P {
         &self.post_process
@@ -197,27 +206,29 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
             return;
         }
 
-        let (inset_width, inset_height) = match self.viewport {
-            Viewport::Full => (0, 0),
-            Viewport::Shrink { width, height } => (width, height),
-        };
-
         let dims = self.size().unwrap();
-        let current_width = dims.width;
-        let current_height = dims.height;
 
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface
             .configure(&self.device, &self.surface_config, Token);
 
-        let width = width - inset_width;
-        let height = height - inset_height;
+        self.regrid(dims.width, dims.height);
+    }
 
-        let chars_wide = width / self.fonts.min_width_px();
-        let chars_high = height / self.fonts.height_px();
+    /// Rebuild the character grid after the surface size or the font metrics
+    /// changed: drop cached cells when the grid dimensions differ, and resize
+    /// the text texture to the new grid.
+    fn regrid(
+        &mut self,
+        previous_width: u16,
+        previous_height: u16,
+    ) {
+        let dims = self.size().unwrap();
+        let chars_wide = dims.width as u32;
+        let chars_high = dims.height as u32;
 
-        if chars_wide != current_width as u32 || chars_high != current_height as u32 {
+        if chars_wide != previous_width as u32 || chars_high != previous_height as u32 {
             self.cells.clear();
             self.rendered.clear();
             self.sourced.clear();
@@ -244,7 +255,7 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
 
         info!(
             "Resized from {}x{} to {}x{}",
-            current_width, current_height, chars_wide, chars_high,
+            previous_width, previous_height, chars_wide, chars_high,
         );
     }
 
@@ -281,9 +292,12 @@ impl<'f, 's, P: PostProcessor, S: RenderSurface<'s>> WgpuBackend<'f, 's, P, S> {
         &mut self,
         new_fonts: Fonts<'f>,
     ) {
-        self.dirty_rows.clear();
+        let dims = self.size().unwrap();
         self.cached.match_fonts(&new_fonts);
         self.fonts = new_fonts;
+        // New font metrics change the cell size, so the grid must be rebuilt
+        // like after a resize; otherwise glyphs stay at their old positions.
+        self.regrid(dims.width, dims.height);
     }
 
     fn render(&mut self) {
@@ -2183,6 +2197,45 @@ mod tests {
             let [r, g, b, a] = r.2 .0;
             assert_eq!(l, [a, b, g, r]);
         }
+    }
+
+    /// Changing the font size changes the grid, so the backend must drop the
+    /// cells and glyphs it placed for the old grid, as a resize does; otherwise
+    /// old glyphs stay on screen next to the new ones.
+    #[test]
+    #[serial]
+    fn update_fonts_regrids() {
+        let font = || {
+            Font::new(include_bytes!("fonts/CascadiaMono-Regular.ttf")).expect("Invalid font file")
+        };
+        let mut terminal = Terminal::new(
+            futures_lite::future::block_on(
+                Builder::<DefaultPostProcessor>::from_font(font())
+                    .with_width_and_height(Dimensions {
+                        width: NonZeroU32::new(512).unwrap(),
+                        height: NonZeroU32::new(72).unwrap(),
+                    })
+                    .build_headless(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        terminal
+            .draw(|f| f.render_widget(Paragraph::new("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), f.area()))
+            .unwrap();
+        let before = ratatui_core::backend::Backend::size(terminal.backend()).unwrap();
+        assert!(!terminal.backend().cells.is_empty());
+
+        terminal
+            .backend_mut()
+            .update_fonts(crate::Fonts::new(font(), 12));
+
+        let backend = terminal.backend();
+        let after = ratatui_core::backend::Backend::size(backend).unwrap();
+        assert!(after.width > before.width && after.height > before.height);
+        assert!(backend.cells.is_empty(), "cells from the old grid were kept");
+        assert!(backend.rendered.is_empty(), "glyphs from the old grid were kept");
+        assert!(backend.sourced.is_empty(), "glyph positions from the old grid were kept");
     }
 
     #[test]
